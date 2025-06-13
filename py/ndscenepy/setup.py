@@ -7,7 +7,11 @@ setup(
     license='MIT',
     description='n-dimensional graphics library',
     long_description=open('README.txt').read(),
-    install_requires=['numpy'],
+    install_requires=[],
+    extras_require={
+        'numpy': ["numpy"],  # Optional dependency for 'mysterious_feature_x'
+        'torch': [  'torch' ]
+    },
     url='https://github.com/leweyg/ndscene',
     author='Lewey Geselowitz',
     author_email='leweygeselowitz@gmail.com'
