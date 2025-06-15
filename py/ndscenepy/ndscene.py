@@ -35,7 +35,10 @@ class ndscenedata():
         return "{}"
 
 
-"""n-dimensional scene graph element, with graphics functions"""
+"""n-dimensional scene graph element, with graphics functions
+get value = pose * ((data<dtype> as shape) | shape )
+set data by (value) = ((unpose | inv(pose)) * value) as shape)<dtype>
+"""
 class ndobject():
 
     size : int = 0
@@ -44,13 +47,13 @@ class ndobject():
     name : str = None
     """Name or key of this dimension"""
 
-    decode : "ndobject" = None
+    pose : "ndobject" = None
     """Transform from local/child space to parent space"""
 
     shape : list["ndobject"] = []
     """Children and/or tensor shape"""
 
-    encode : "ndobject" = None
+    unpose : "ndobject" = None
     """Transform to data/child space from local space"""
 
     dtype : str = None
