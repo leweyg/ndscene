@@ -1,6 +1,5 @@
 
 
-
 class ndjson:
     def str_property(property_name:str, property_value:str) -> str:
         # TODO(leweyg): string validation on both
@@ -9,6 +8,8 @@ class ndjson:
         inner = ndjson.str_property(property_name, property_value)
         return "{" + inner + "}";
 
+def nd_todo():
+    raise "nd_todo"
 
 class ndscenedata():
     path : str = None
@@ -26,8 +27,26 @@ class ndscenedata():
     buffer : bytes = None
     """Byte buffer"""
 
-    def __init__(self, initVal : str):
-        self.text = initVal
+    def __init__(self, initVal):
+        if (initVal is str):
+            self.text = initVal
+            return
+        if (initVal is bytes):
+            self.buffer = initVal
+            return
+        if (initVal is list):
+            if (len(initVal) > 0):
+                first = initVal[0]
+                if (first is str):
+                    self.strings = initVal
+                    return
+                elif (first is float):
+                    self.numbers = initVal
+                    return
+                raise "OtherListType?=" + type(first)
+            # empty array
+            self.numbers = []
+            return;
 
     def __str__(self):
         if (self.text):
@@ -76,6 +95,45 @@ class ndobject():
             ans += f"\"data\":{self.data},";
         ans += "}"
         return ans
+
+    @staticmethod
+    def from_json(self, obj):
+        if (obj is str):
+            ans = ndobject()
+            ans.data = ndscenedata(obj)
+            return ans
+        if (obj is dict):
+            ans = ndobject()
+            ans.shape = []
+            for k,v in obj.items():
+                d = ndobject.from_json(v)
+                if (k and not d.name):
+                    d.name = k
+                ans.shape.append(d)
+            return ans
+        if (obj is list):
+            ans = ndobject()
+            ans.shape = []
+            for v in obj:
+                d = ndobject.from_json(v)
+                ans.shape.append(d)
+            return ans
+        nd_todo()
+
+    def json_object(self):
+        if (self.pose):
+            return todo_object
+        if (self.data and self.shape):
+            return todo_tensor
+        if (self.data):
+            return todo_array
+        if (self.shape):
+            return todo_dict
+        if (self.name):
+            return todo_str
+        if (self.size):
+            return todo_number
+        
 
 class ndscene():
 
