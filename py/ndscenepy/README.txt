@@ -1,5 +1,7 @@
 
-ndscene python library
+ObjectND, TensorND and RenderND
 
-n-dimensional scene-graph graphics library for python
+n-dimensional scene-graph format and runtime:
+
+
 
