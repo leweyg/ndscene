@@ -4,32 +4,35 @@ n-dimensional scene-graph format and runtime
 
 ## JSON Schema
 
-In brief: scenes contain objects which contain dictionaries of tensors. Object transforms can be selection from shared tensors. The @type semantics below are optional and included for clarity.
+In brief: scenes contain objects which contain dictionaries of tensor-shaped data. Object transforms can be selection from shared tensors. The @type semantics below are optional and included for clarity.
 
 ```json
 {
     // 
-    "@type": "SceneND",
-    "objects" :{"key :string_key":{
-        "@type": "ObjectND",
-        "children": "list<string_key|ObjectND",)
-        "parents": "list<string_key|ObjectND",
+    "@type": "SceneND", // scene of nd-objects
+    "objects" :{"key :string_key":{ // list or dictionary of objects
+
+        "@type": "ObjectND", // tensor-based scene element
+        "children": "list<string_key|ObjectND", // move with this object
+        "parents": "list<string_key|ObjectND", // multiple for bundle adjustment
         "pose": "TensorND", // read(): return pose * concat( data, children.read() )
         "unpose": "TensorND", // write(value): data = unpose * value
         "data": {
 
-            "@type" :"TensorND",
+            "@type" :"TensorND", // recursivly/nestable defined tensor
             "key" :"string", // the dimension name / dictionary key
             "size" :"int", // the size used in 'shape:[int]' shorthand
             "shape" :"list<TensorND>", // nested for dictionaries
             "dtype" :"string", // data element type, traditionally an enum
             "data" : {
                 
-                "@type" : "DataND |array|bytes|string", // shorthand types
-                "path": "string", // path to shared memory, runtime dependant
-                "array" : ["number|string|etc."], // primary array
-                // custom types (for effecient typed transport):
-                "text" : "string",
+                "@type" : "DataND |array|bytes|string", // linear data representation
+                // path to shared memory representation, runtime dependant:
+                "path": "string",
+                // standard arrays and singular-values:
+                "array" : ["number|string|etc."],
+                "value" : "string|number|bool",
+                // custom pural types (for effecient typed transport):
                 "buffer" : "bytes",
                 "strings": ["string"],
                 "numbers": ["number"],
