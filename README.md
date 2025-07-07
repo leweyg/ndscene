@@ -1,5 +1,5 @@
 
-# ObjectND, TensorND and RenderND
+# SceneND: ObjectND, TensorND and RenderND
 n-dimensional scene-graph format and runtime
 
 ## JSON Schema
@@ -8,28 +8,38 @@ In brief: scenes contain objects which contain dictionaries of tensors. Object t
 
 ```json
 {
+    // 
     "@type": "SceneND",
     "objects" :{"key :string_key":{
-
         "@type": "ObjectND",
-        "children": "list<string_key|ObjectND",
+        "children": "list<string_key|ObjectND",)
         "parents": "list<string_key|ObjectND",
-        "pose": "tensorND",
-        "unpose": "tensorND",
+        "pose": "TensorND", // read(): return pose * concat( data, children.read() )
+        "unpose": "TensorND", // write(value): data = unpose * value
         "data": {
 
             "@type" :"TensorND",
-            "key" :"string",
-            "size" :"int",
-            "shape" :"list<TensorND>",
-            "data" :"array_of_dtype",
-            "dtype" :"string",
+            "key" :"string", // the dimension name / dictionary key
+            "size" :"int", // the size used in 'shape:[int]' shorthand
+            "shape" :"list<TensorND>", // nested for dictionaries
+            "dtype" :"string", // data element type, traditionally an enum
+            "data" : {
+                
+                "@type" : "DataND |array|bytes|string", // shorthand types
+                "path": "string", // path to shared memory, runtime dependant
+                "array" : ["number|string|etc."], // primary array
+                // custom types (for effecient typed transport):
+                "text" : "string",
+                "buffer" : "bytes",
+                "strings": ["string"],
+                "numbers": ["number"],
+            }
         }
     }}
 }
 ```
 
-For convenience these can be specified in pure JSON. Unrecognized dictionary keys are considered shape properties (in the provided order), and shapes without named keys are considered sizes:
+For convenience these can be specified in pure JSON, and don't need to be strongly typed before being passed to the Render APIs. Unrecognized dictionary keys are considered shape properties (in the provided order), and shapes without named keys are considered sizes:
 
 | JSON | TensorND |
 | --- | --- |
@@ -41,18 +51,24 @@ For convenience these can be specified in pure JSON. Unrecognized dictionary key
 
 ```python
 class RenderND:
+
+    # TensorND/JSON conversions:
+    ensure_tensor(obj) -> TensorND: pass # given a tensor or JSON result, ensure that the object is TensorND configured.
+    ensure_data(obj) -> DataND: pass # given an JSON result, return a typed DataND wrapper if it isn't already.
+    json_object(data:TensorND|DataND) -> dict: pass # given a tensor return a JSON-stringify-able result.
+
     # Core API (TensorND only):
-    setResult(to :TensorND): pass # set the destination tensor, and uses update semantics if provided. Returns new result if not provided
-    pushPose(pose: TensorND, unpose :TensorND): pass # pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored.
-    applyData(data :TensorND): pass # concatenates the data to existing input data given the current transform stack.
-    popPose(): pass # pop the transform
-    getResult() -> TensorND: pass # returns the data transformed by the poses
+    set_result(to :TensorND): pass # set the destination tensor, and uses update semantics if provided. Returns new result if result is None
+    push_pose(pose: TensorND, unpose :TensorND): pass # pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored.
+    apply_data(data :TensorND): pass # concatenates the data to existing input data given the current transform stack.
+    pop_pose(): pass # pop the transform
+    get_result() -> TensorND: pass # returns the data transformed by the poses
 
     # ObjectND Extensions:
-    applyChildren( obj :ObjectND ): pass # walks the children calling pushPose/applyData/popPose as appropriate.
-    resultFromChildren( obj :ObjectND ): pass # updates the data on this node by walking it's child objects. Useful for scene caches.
-    pushUnposeToWorld( obj :ObjectND, stopAt :ObjectND=null): pass # walks the parents to preare this (camera?) to draw from world space
-    resultFromWorld( obj :ObjectND ): pass # updates the data on this node by pushing the unpose to world, and then walking the world. Useful for cameras.
+    apply_children( obj :ObjectND ): pass # walks the children calling pushPose/applyData/popPose as appropriate.
+    update_from_children( obj :ObjectND ): pass # updates the data on this node by walking it's child objects. Useful for scene caches.
+    push_unpose_to_world( obj :ObjectND, stopAt :ObjectND=null): pass # walks the parents to preare this (camera?) to draw from world space
+    update_from_world( obj :ObjectND ): pass # updates the data on this node by pushing the unpose to world, and then walking the world. Useful for cameras.
 ```
 
 ## API - TypeScript + Three.js
@@ -68,38 +84,3 @@ class SceneNDIn3D extends Object3D {
 }
 ```
 
-### JSON Format and Previous Work
-
-
-| ObjectND | Previous Work - Scene Graphs | Description |
-| --- | --- | --- |
-| key :string | name: string | Unique identifier |
-| pose :TensorND | Pose : float4x4 | Value-space from local data/children-space |
-| unpose :TensorND | Projection : float4x4 | Local data/children-space from value-space |
-| data :TensorND | Components | Nestable dictionary/lists of tensors |
-| parents :[ObjectND/string_id] | Parent :Object3D (singular) | Known relative transforms |
-| children:[ObjectND/string_id] | Children: [ObjectND] | Sub-objects, value = concat(data,children) |
-
-| TensorND | Previous Work - Tensors | Descriptions |
-| --- | --- | --- |
-| key :string | parent.names[i] | Dimension name (optional) |
-| size :int | parent.shape[i] | Dimension size |
-| data :[dtype] | data :[dtype] | Linear array of data |
-| dtype:string | dtype:lib.type | String name of data element type |
-
-
-| RenderND | Previous Work - Graphics | Description |
-| --- | --- | --- |
-| glndPushTarget(tensor) | glRenderTarget(target) | Output tensor |
-| glndPushUnpose(tensor) | glCamera() | Camera configuration |
-| glndPushPose(tensor) | glPushMatrix(f4x4) | Object transforms |
-| glndValue(tensor) | glDraw() | Push value |
-| glndPopPose() | glPopMatrix() | Pop object transform |
-| glndPopUnpose() | glPopCamera() | Prop camera  |
-
-
-`value() = pose * concat(data,children.value())`
-
-`cache(): data = unpose * children.value()`
-
-`draw(): data = unpose * world * pose * world.value()`
