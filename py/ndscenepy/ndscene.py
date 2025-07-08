@@ -1,19 +1,14 @@
 
 
-class ndjson:
-    def str_property(property_name:str, property_value:str) -> str:
-        # TODO(leweyg): string validation on both
-        return f"\"{property_name}\":\"{property_value}\""
-    def str_object1(property_name:str, property_value:str) -> str:
-        inner = ndjson.str_property(property_name, property_value)
-        return "{" + inner + "}";
+def TodoND(desc=""):
+    raise Exception("TODO_ND:" + desc)
 
-def nd_todo():
-    raise "nd_todo"
-
-class ndscenedata():
+class DataND():
     path : str = None
     """Externally shared 'path' of the data"""
+
+    tensor = None
+    """Native tensor type (PyTorch, numpy, etc.)"""
 
     text : str = None
     """Single text block"""
@@ -27,126 +22,154 @@ class ndscenedata():
     buffer : bytes = None
     """Byte buffer"""
 
-    def __init__(self, initVal):
-        if (initVal is str):
-            self.text = initVal
-            return
-        if (initVal is bytes):
-            self.buffer = initVal
-            return
-        if (initVal is list):
-            if (len(initVal) > 0):
-                first = initVal[0]
-                if (first is str):
-                    self.strings = initVal
-                    return
-                elif (first is float):
-                    self.numbers = initVal
-                    return
-                raise "OtherListType?=" + type(first)
-            # empty array
-            self.numbers = []
-            return;
-
-    def __str__(self):
-        if (self.text):
-            return ndjson.str_object1('text', self.text)
-        return "{}"
-
-
-"""n-dimensional scene graph element, with graphics functions
-get value = pose * ((data<dtype> as shape) | shape )
-set data by (value) = ((unpose | inv(pose)) * value) as shape)<dtype>
+"""nestable/recursivly-defined tensor
 """
-class ndobject():
+class TensorND():
+    key :str = None
+    size :int = None
+    shape :list["TensorND"] = None
+    dtype :str = None
+    data :DataND = None
 
-    size : int = 0
-    """Size/length of this dimension"""
-
-    name : str = None
-    """Name or key of this dimension"""
-
-    pose : "ndobject" = None
-    """Transform from local/child space to parent space"""
-
-    shape : list["ndobject"] = []
-    """Children and/or tensor shape"""
-
-    unpose : "ndobject" = None
-    """Transform to data/child space from local space"""
-
-    dtype : str = None
-    """Data type (format) for this data"""
-
-    data : ndscenedata = None
-    """Data at this node"""
-
-    def __init__(self, initVal : str|None):
-        if (initVal):
-            self.data = ndscenedata( initVal )
+    def __init__(self, _size:int=None, _key:str=None):
+        if (_size):
+            self.size = _size
+        if (_key):
+            self.key = _key
+        pass
 
     def __str__(self):
-        ans = "{"; #\"ndobject\":true,"
-        if (self.size != 0):
-            ans += "\"size\"=0,"
-        if (self.name):
-            ans += f"\"name\":\"{self.name}\","
+        ans = "{"
+        if (self.key):
+            ans += f"\"{self.key}\":"
+        if (self.size):
+            ans += "x" + self.size
+        if (self.shape and len(self.shape) > 0):
+            ans += "["
+            for s in self.shape:
+                ans += str(s) + ","
+            ans += "]"
+        if (self.dtype):
+            ans += f"<{self.dtype}>"
         if (self.data):
-            ans += f"\"data\":{self.data},";
+            ans += f"={self.data}"
         ans += "}"
         return ans
 
+
+"""n-dimensional scene graph element
+"""
+class ObjectND():
+    key :str = None
+    """Name/id of this ObjectND"""
+
+    parents :list["ObjectND"] = []
+    """Parent objects which this concatenates into"""
+
+    children :list["ObjectND"] = []
+    """Child object which concatenate into this one"""
+
+    components :dict = {}
+    """Generic components by key for extensbility"""
+
+    pose :TensorND = None
+    """Transform from local/child space to parent space"""
+
+    unpose :TensorND = None
+    """Transform to data/child space from local space"""
+
+    data :TensorND = None
+    """Content to be multipled by pose or encoded via unpose"""
+
+    def __str__(self):
+        ans = "{"; #\"ndobject\":true,"
+        if (self.key):
+            ans += f"\"key\"={self.key},"
+        if (self.pose != 0):
+            ans += f"\"pose\"={self.pose},"
+        ans += "}"
+        return ans
+
+class SceneND():
+    root :ObjectND = None
+    objects :list[ObjectND] = []
+    paths :dict[str,ObjectND|TensorND] = {}
+
+class JsonND:
+    # JSON read/write (static methods):
     @staticmethod
-    def from_json(self, obj):
-        if (obj is str):
-            ans = ndobject()
-            ans.data = ndscenedata(obj)
+    def ensure_tensor(obj)->TensorND:
+        if (isinstance(obj, TensorND)):
+            return obj
+        if (isinstance(obj, str)):
+            ans = TensorND()
+            ans.data = JsonND.ensure_data(obj)
+            ans.size = len(obj)
+            ans.dtype = "char"
+            ans.shape = [TensorND(ans.size, "letter")]
             return ans
-        if (obj is dict):
-            ans = ndobject()
-            ans.shape = []
-            for k,v in obj.items():
-                d = ndobject.from_json(v)
-                if (k and not d.name):
-                    d.name = k
-                ans.shape.append(d)
+        TodoND()
+        return None
+    @staticmethod
+    def ensure_data(obj)->DataND:
+        if (isinstance(obj, DataND)):
+            return obj
+        if (isinstance(obj, str)):
+            ans = DataND()
+            ans.text = str
             return ans
-        if (obj is list):
-            ans = ndobject()
-            ans.shape = []
-            for v in obj:
-                d = ndobject.from_json(v)
-                ans.shape.append(d)
-            return ans
-        nd_todo()
+        TodoND(f"ensure_data:{obj}")
+        return None
+    @staticmethod
+    def json_object(data:TensorND|DataND)->dict:
+        TodoND()
+        return None
 
-    def json_object(self):
-        if (self.pose):
-            return todo_object
-        if (self.data and self.shape):
-            return todo_tensor
-        if (self.data):
-            return todo_array
-        if (self.shape):
-            return todo_dict
-        if (self.name):
-            return todo_str
-        if (self.size):
-            return todo_number
+
+class MathND:
+    @staticmethod
+    def inverse_pose(pose:TensorND):
+        TodoND()
+        return pose;
+    @staticmethod
+    def apply_pose_to_data(pose:TensorND, data:TensorND):
+        TodoND() # batch-matrix-multiply by default
+        return pose * data
+
+class RenderND:
+    state_result :TensorND = None
+    stack_pose   :list[TensorND] = None
+
+    # Core API (TensorND only):
+    def set_result(self, res :TensorND):
+        self.state_result = JsonND.ensure_tensor(res)
         
+    def push_pose(self, pose: TensorND, unpose :TensorND):
+        """pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored."""
+        if (pose):
+            self.stack_pose.append(pose)
+            return
+        if (unpose):
+            self.stack_pose.append(MathND.inverse_pose(unpose))
+            return;
+        raise "Either pose or unpose must be defined for 'push_pose'."
 
-class ndscene():
+    def apply_data(self, data :TensorND):
+        """concatenates the data to existing input data given the current transform stack."""
+        ans = data
+        for p in reversed(self.stack_pose):
+            ans = MathND.apply_pose_to_data(p, ans)
+        if (self.state_result):
+            self.state_result.copy(ans)
+            return self.state_result
+        return ans
 
-    world : ndobject = None
+    def pop_pose(self):
+        n = len(self.stack_pose)
+        if (n <= 0):
+            raise "Can't call 'pop_pose' on an empty pose stack."
+        self.stack_pose.pop()
 
-    def redraw(self, target : ndobject) -> ndobject:
-        return target
-    
-    def to_json_obj(self) -> dict:
-        raise "TODO: ndscene.to_json_obj"
-        return {}
-    
-    def to_json_str(self) -> str:
-        obj = self.to_json_obj()
-        import json;
-        return json.dumps(obj)
+    def get_result(self) -> TensorND:
+        """returns the data transformed by the poses"""
+        return self.state_result

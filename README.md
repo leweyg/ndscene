@@ -10,16 +10,19 @@ In brief: scenes contain objects which contain dictionaries of tensor-shaped dat
 {
     // 
     "@type": "SceneND", // scene of nd-objects
-    "objects" :{"key :string_key":{ // list or dictionary of objects
+    "root": "string_key|ObjectND", // id of root object
+    "objects": ["ObjectND"],
+    "paths" :{"string_key":{ // list or dictionary of objects
 
         "@type": "ObjectND", // tensor-based scene element
+        "key": "string_key", // name/id of this object
         "children": "list<string_key|ObjectND", // move with this object
         "parents": "list<string_key|ObjectND", // multiple for bundle adjustment
         "pose": "TensorND", // read(): return pose * concat( data, children.read() )
         "unpose": "TensorND", // write(value): data = unpose * value
         "data": {
 
-            "@type" :"TensorND", // recursivly/nestable defined tensor
+            "@type" :"TensorND", // nestable/recursivly-defined tensor
             "key" :"string", // the dimension name / dictionary key
             "size" :"int", // the size used in 'shape:[int]' shorthand
             "shape" :"list<TensorND>", // nested for dictionaries
@@ -28,7 +31,7 @@ In brief: scenes contain objects which contain dictionaries of tensor-shaped dat
                 
                 "@type" : "DataND |array|bytes|string", // linear data representation
                 // path to shared memory representation, runtime dependant:
-                "path": "string",
+                "path": "string_key",
                 // standard arrays and singular-values:
                 "array" : ["number|string|etc."],
                 "value" : "string|number|bool",
@@ -54,6 +57,9 @@ For convenience these can be specified in pure JSON, and don't need to be strong
 
 ```python
 class RenderND:
+    stack_result :TensorND = None
+    stack_pose   :list[TensorND] = None
+    stack_values :list[TensorND] = None
 
     # TensorND/JSON conversions:
     ensure_tensor(obj) -> TensorND: pass # given a tensor or JSON result, ensure that the object is TensorND configured.
