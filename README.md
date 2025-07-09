@@ -11,7 +11,6 @@ In brief: scenes contain objects which contain dictionaries of tensor-shaped dat
     // 
     "@type": "SceneND", // scene of nd-objects
     "root": "string_key|ObjectND", // id of root object
-    "objects": ["ObjectND"],
     "paths" :{"string_key":{ // list or dictionary of objects
 
         "@type": "ObjectND", // tensor-based scene element
