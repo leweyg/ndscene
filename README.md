@@ -2,12 +2,14 @@
 # SceneND: ObjectND, TensorND and RenderND
 n-dimensional scene-graph format and runtime
 
-## Abstract / Architecture Principals
+## Abstract / Architectural Principals
 
-1. "Tensors" (TensorND) should be recursivly nestable, i.e. dictionaries of native-tensors are also Tensors.
-2. "Objects" (ObjectND) are sparse tensors, equivalent to the concatenation of their children, including support for parallel dictionaries of tensors.
-3. "Data" (DataND) behind tensors can be transitioned between tensored, buffered, mime-compressed and remote-pathed states.
-3. "Scenes" (SceneND) are collections of objects including support of instancing/reuse of Objects and Tensors.
+1. "Tensors" (TensorND) should be recursivly nestable, i.e. tensors can be dictionaries of tensors. In this way most structured data is already considered to be in tensor format.
+2. "Objects" (ObjectND) are posed/transformed sparse tensors, equivalent to the concatenation of their tranformed children, including support for parallel dictionaries of tensors. This combines the flexibility of scene composition with the effeciency of dense/repeated tensors.
+3. "Data" (DataND) behind tensors can be progressivly transitioned between tensored, buffered, mime-compressed and remote-pathed states. Allowing natural integration of standard image, video, zip and other compression schemes.
+3. "Scenes" (SceneND) are collections of objects including support of reuse/sharing of Objects, Tensors and Data; which is useful in instancing and other techniques.
+4. "Rendering" (RenderND) is the process of walking a posed tree of concatented objects, and differentiably unposing their result back into an updated target objects state.
+5. "Streaming" (StreamND) is achieved via scene patches/updates, including scenes which are themselves queries for additional content, and which generally leverage a secondary path-based file/shared-memory system for same-device or cacheable content.
 
 ## JSON Schema
 
