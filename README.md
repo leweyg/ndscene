@@ -11,6 +11,8 @@ n-dimensional scene-graph format and runtime
 3. "Poses/Transforms" (PoseND) also being tensors default to being batch-matrix-multiply transforms along each parallel dictionary dimension, but can be replaced by reference to externally defined non-recurive-tensor "models".
 4. "Rendering" (RenderND) is the process of walking a posed tree of concatented objects, and differentiably unposing their result back into an updated target objects state. Caching is handled either automatically or by careful walking/updating of the scene tree.
 5. "Streaming" (StreamND) is achieved via scene patches/updates, including scenes which are themselves queries for additional content, and which generally leverage a secondary path-based file/shared-memory system for same-device or cacheable content.
+6. "Torch" (PyTorch Support) should be optional and lazily imported to not cause
+delays/breaks where it's not used.
 
 ## JSON Schema
 

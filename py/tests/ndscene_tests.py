@@ -8,10 +8,18 @@ import ndscenepy.ndscene as ndscene
 
 print("Defining...")
 
+def main_test_tensors():
+    array = [ [ 1, 2, 3 ], [ 4, 5, 6 ] ]
+    tnd = ndscene.TensorND.from_arrays(array)
+    tnr = ndscene.TorchND.tensor(tnd)
+    print(tnr)
+
 def main_tests():
     print("ndscene_tests.main_tests starting:")
-    desc = ndscene.ObjectND('just a test')
+    desc = ndscene.ObjectND()
     print("desc=", desc)
+    print("ndscene_tests.main_test_tensors:")
+    main_test_tensors()
     print("ndscene_tests.main_tests done.")
     pass;
 

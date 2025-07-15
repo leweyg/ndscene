@@ -52,6 +52,25 @@ class TensorND():
             ans += f"={self.data}"
         ans += "}"
         return ans
+    
+    @staticmethod
+    def shape_of(input_list : list)->list[int]:
+        shape = [ len(input_list) ]
+        if (shape[0] > 0):
+            first = input_list[0]
+            while (isinstance(first, list) and len(first)>0):
+                shape.append(len(first))
+                first = first[0]
+        return shape
+    @staticmethod
+    def from_arrays(input_list):
+        shape = TensorND.shape_of(input_list)
+        ans = TensorND()
+        ans.shape = [TensorND(s) for s in shape]
+        ans.data = DataND()
+        ans.data.buffer = input_list
+        return ans
+
 
 
 """n-dimensional scene graph element
@@ -89,8 +108,9 @@ class ObjectND():
 
 class SceneND():
     root :ObjectND = None
-    objects :list[ObjectND] = []
-    paths :dict[str,ObjectND|TensorND] = {}
+    objects :dict[str,ObjectND] = {}
+    tensors :dict[str,TensorND] = {}
+    datapaths :dict[str,DataND] = {}
 
 class JsonND:
     # JSON read/write (static methods):
@@ -118,7 +138,7 @@ class JsonND:
         TodoND(f"ensure_data:{obj}")
         return None
     @staticmethod
-    def json_object(data:TensorND|DataND)->dict:
+    def json_object(data:ObjectND)->dict:
         TodoND()
         return None
 
@@ -132,6 +152,29 @@ class MathND:
     def apply_pose_to_data(pose:TensorND, data:TensorND):
         TodoND() # batch-matrix-multiply by default
         return pose * data
+
+class TorchND:
+    @staticmethod
+    def torch():
+        import torch
+        return torch
+    @staticmethod
+    def size(tensornd : TensorND):
+        import torch
+        shape = torch.Size( [i.size for i in tensornd.shape] )
+        return shape
+    @staticmethod
+    def tensor(tensornd : TensorND):
+        if (tensornd.data.tensor):
+            return tensornd.data.tensor
+        import torch
+        shape = torch.Size( [i.size for i in tensornd.shape] )
+        ans = torch.tensor( tensornd.data.buffer )
+        print("ans.shape=", ans.shape)
+        print("shape", shape)
+        assert( ans.shape == shape )
+        tensornd.data.tensor = ans
+        return ans
 
 class RenderND:
     state_result :TensorND = None
