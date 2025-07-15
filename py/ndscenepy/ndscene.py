@@ -1,26 +1,23 @@
 
+# ndScene Summary
+# sceneND { objectND { tensorND { dataND { tensor/compression/path } } } } 
 
 def TodoND(desc=""):
     raise Exception("TODO_ND:" + desc)
 
+"""Data used to back tensors, this data can be a readily availabe native 'tensor',
+an uncompressed buffer, compressed MIME data, or an external path."""
 class DataND():
-    path : str = None
-    """Externally shared 'path' of the data"""
-
     tensor = None
-    """Native tensor type (PyTorch, numpy, etc.)"""
+    buffer = None
+    buffer_dtype : str = None
+    buffer_size = None
+    compressed = None
+    compressed_type : str = None
+    compressed_size = None
+    path : str = None
+    path_size : int = None
 
-    text : str = None
-    """Single text block"""
-
-    numbers : list[float] = None
-    """Array of numbers"""
-
-    strings : list[str] = None
-    """Array of strings"""
-
-    buffer : bytes = None
-    """Byte buffer"""
 
 """nestable/recursivly-defined tensor
 """

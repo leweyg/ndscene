@@ -2,6 +2,13 @@
 # SceneND: ObjectND, TensorND and RenderND
 n-dimensional scene-graph format and runtime
 
+## Abstract / Architecture Principals
+
+1. "Tensors" (TensorND) should be recursivly nestable, i.e. dictionaries of native-tensors are also Tensors.
+2. "Objects" (ObjectND) are sparse tensors, equivalent to the concatenation of their children, including support for parallel dictionaries of tensors.
+3. "Data" (DataND) behind tensors can be transitioned between tensored, buffered, mime-compressed and remote-pathed states.
+3. "Scenes" (SceneND) are collections of objects including support of instancing/reuse of Objects and Tensors.
+
 ## JSON Schema
 
 In brief: scenes contain objects which contain dictionaries of tensor-shaped data. Object transforms can be selection from shared tensors. The @type semantics below are optional and included for clarity.
@@ -25,19 +32,18 @@ In brief: scenes contain objects which contain dictionaries of tensor-shaped dat
             "key" :"string", // the dimension name / dictionary key
             "size" :"int", // the size used in 'shape:[int]' shorthand
             "shape" :"list<TensorND>", // nested for dictionaries
-            "dtype" :"string", // data element type, traditionally an enum
+            "dtype" :"string_dtype", // data element type, traditionally an enum
             "data" : {
                 
                 "@type" : "DataND |array|bytes|string", // linear data representation
-                // path to shared memory representation, runtime dependant:
-                "path": "string_key",
-                // standard arrays and singular-values:
-                "array" : ["number|string|etc."],
-                "value" : "string|number|bool",
-                // custom pural types (for effecient typed transport):
+                "tensor" : ["number|string|numpy|pytorch"],
                 "buffer" : "bytes",
-                "strings": ["string"],
-                "numbers": ["number"],
+                "buffer_size": "int", // size uncompressed
+                "buffer_dtype": "string_dtype",
+                "compressed" : "bytes",
+                "compressed_type" : "string_mime_type",
+                "compressed_size" : "int", 
+                "path" : "string", // external path
             }
         }
     }}
