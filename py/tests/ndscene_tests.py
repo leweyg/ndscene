@@ -10,7 +10,7 @@ print("Defining...")
 
 def main_tests():
     print("ndscene_tests.main_tests starting:")
-    desc = ndscene.ndobject('just a test')
+    desc = ndscene.ObjectND('just a test')
     print("desc=", desc)
     print("ndscene_tests.main_tests done.")
     pass;
