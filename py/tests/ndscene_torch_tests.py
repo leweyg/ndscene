@@ -47,6 +47,15 @@ class SimpleNN(nn.Module):
         x = self.relu(x)
         x = self.fc2(x)
         return x
+    
+    def printParameters(self):
+        params = [ self.fc1, self.relu, self.fc2 ]
+        for p in params:
+            if (isinstance(p,nn.Linear)):
+                print("Model Param", p.weight, p.bias)
+            else:
+                print("ModelParam:", p)
+        #print("Model Parameters:", self.fc1.weight, self.fc1.bias)
 
 # Simple optimization loop:
 class SimpleSolverLoop:
@@ -66,7 +75,7 @@ class SimpleSolverLoop:
     def solve_step(self, sampleIn, targetOut):
         sampleOut = self.model(sampleIn)
         loss = self.loss_as_out_minus_target(sampleOut, targetOut); # self.criterion(y_pred, sampleOutput)
-        print("Loss:", loss)
+        print("Loss:", loss.item())
         # Zero gradients, perform a backward pass, and update the weights.
         self.optimizer.zero_grad()
         debugCreateGraph = False;
@@ -76,7 +85,7 @@ class SimpleSolverLoop:
 # Example usage:
 if __name__ == "__main__":
     input_dim = 2  # Number of input features
-    hidden_dim = 50 # Number of neurons in the hidden layer
+    hidden_dim = 6 # Number of neurons in the hidden layer
     output_dim = 1  # Number of output classes or values
 
     # Create an instance of the model
@@ -100,6 +109,8 @@ if __name__ == "__main__":
     for i in range(solverSteps):
         print("Step:", i)
         solver.solve_step(img.input_tensor, img.target_tensor)
+
+    model.printParameters();
 
     print("Done.")
     
