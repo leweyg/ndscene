@@ -8,6 +8,6 @@ python3 -m tests.ndscene_tests
 
 # pytorch testing (optional if this is removed):
 python3 -m tests.ndscene_torch_tests
-
+python3 -m tests.ndscene_torch_imageio
 
 

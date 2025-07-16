@@ -3,3 +3,5 @@
 *__pycache__*
 
 py/ndscenepy/ndscene.egg-info/*
+py/tests/.results/*
+
