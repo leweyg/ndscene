@@ -7,13 +7,17 @@ def TodoND(desc=""):
 def NDTODO(desc=""):
     TodoND(desc)
 
-"""Data used to back tensors, this data can be a readily availabe native 'tensor',
-an uncompressed buffer, compressed MIME data, or an external path."""
+"""Data is used to load and store tensors, converting between remote 'path',
+to local 'buffer' and via 'format' (dtype or MIME) to 'tensor' on demand."""
 class DataND():
     tensor = None
+    """Native tensor-representation, consider 'ensure_tensor()' to access """
     format = None # MIME type or dtype
+    """dtype or MIME type"""
     buffer = None
+    """Loaded buffer representation"""
     path : str = None
+    """File or URL path to the buffer of type format to load into the tensor"""
 
     def ensure_tensor(self):
         if (self.tensor):
@@ -42,6 +46,11 @@ class DataND():
         ans.buffer = text
         ans.format = "text/plain"
         return ans
+    @staticmethod
+    def from_tensor(tensor):
+        ans = DataND()
+        ans.tensor = tensor
+        return ans
 
 
 """nestable/recursivly-defined tensor
@@ -53,11 +62,25 @@ class TensorND():
     dtype :str = None
     data :DataND = None
 
-    def __init__(self, _size:int=None, _key:str=None):
-        if (_size):
-            self.size = _size
-        if (_key):
-            self.key = _key
+    @staticmethod
+    def from_data(data:DataND):
+        ans = TensorND()
+        ans.data = data
+        return ans
+
+    @staticmethod
+    def from_tensor(tensor):
+        if (isinstance(tensor, TensorND)):
+            return tensor
+        return TensorND.from_data(DataND.from_tensor(tensor))
+
+    def __init__(self, initSize:int=None, initKey:str=None, initData:DataND=None):
+        if (initSize):
+            self.size = initSize
+        if (initKey):
+            self.key = initKey
+        if (initData):
+            self.data = initData
         pass
 
     def __str__(self):
@@ -110,17 +133,14 @@ class ObjectND():
     children :list["ObjectND"] = []
     """Child object which concatenate into this one"""
 
-    components :dict = {}
-    """Generic components by key for extensbility"""
+    data :TensorND = None
+    """Content to be multipled by pose or encoded via unpose"""
 
     pose :TensorND = None
     """Transform from local/child space to parent space"""
 
     unpose :TensorND = None
     """Transform to data/child space from local space"""
-
-    data :TensorND = None
-    """Content to be multipled by pose or encoded via unpose"""
 
     def __str__(self):
         ans = "{"; #\"ndobject\":true,"
@@ -133,9 +153,16 @@ class ObjectND():
 
 class SceneND():
     root :ObjectND = None
+    """Root query in the scene (not always world space)"""
     objects :dict[str,ObjectND] = {}
+    """Named ObjectND's in the scene by name"""
     tensors :dict[str,TensorND] = {}
-    datapaths :dict[str,DataND] = {}
+    """Named tensors in the scene by name"""
+
+    def add_tensor(self, path:str, tensor:TensorND):
+        self.tensors[path] = tensor
+    def add_data(self, path:str, data:DataND):
+        self.tensors[path] = TensorND.from_data(data)
 
 class JsonND:
     # JSON read/write (static methods):
