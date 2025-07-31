@@ -38,6 +38,20 @@ class NDData():
             return ans
         NDTODO()
 
+    def __str__(self):
+        ans = "{";
+        if (self.tensor is not None):
+            ans += f"\"tensor\":{self.tensor}"
+        else:
+            if (self.format):
+                ans += f"\"format\":\"{self.format}\","
+            if (self.buffer is not None):
+                ans += f"\"buffer\":\"{self.buffer}\","
+            if (self.path):
+                ans += f"\"path\":\"{self.path}\","
+        ans += "}"
+        return ans;
+
     @staticmethod
     def from_text(text:str):
         ans = NDData()
@@ -60,6 +74,43 @@ class NDTensor():
     dtype :str = None
     data :NDData = None
 
+    def __init__(self, initSize:int=None, initKey:str=None, initData:NDData=None):
+        if (initSize):
+            self.size = initSize
+        if (initKey):
+            self.key = initKey
+        if (initData):
+            self.data = initData
+        pass
+
+    @staticmethod
+    def ensure(input):
+        assert(not isinstance(input,str))
+        if (NDTorch.is_tensor(input)):
+            ans = NDTensor()
+            ans.data = NDData.from_tensor(input)
+            return ans
+        NDTODO()
+
+    def shape_ensure(self):
+        if (self.shape is None):
+            self.shape = []
+        return self.shape
+
+    def shape_find(self, key:str):
+        if (self.shape is None):
+            return None
+        for sh in self.shape:
+            if (sh.key == key):
+                return sh
+        return None
+
+    def shape_append(self, tensor:"NDTensor"):
+        assert(isinstance(tensor,NDTensor))
+        if (tensor.key):
+            assert(self.shape_find(tensor.key) is None)
+        self.shape_ensure().append(tensor)
+
     @staticmethod
     def from_data(data:NDData):
         ans = NDTensor()
@@ -71,15 +122,6 @@ class NDTensor():
         if (isinstance(tensor, NDTensor)):
             return tensor
         return NDTensor.from_data(NDData.from_tensor(tensor))
-
-    def __init__(self, initSize:int=None, initKey:str=None, initData:NDData=None):
-        if (initSize):
-            self.size = initSize
-        if (initKey):
-            self.key = initKey
-        if (initData):
-            self.data = initData
-        pass
 
     def __str__(self):
         ans = "{"
@@ -119,17 +161,17 @@ class NDTensor():
 
 
 
-"""n-dimensional scene graph element
+"""n-dimensional scene graph object/element
 """
 class NDObject():
-    key :str = None
+    name :str = None
     """Name/id of this NDObject"""
 
-    parents :list["NDObject"] = []
-    """Parent objects which this concatenates into"""
+    parents :list["NDObject"] = None
+    """Parent/output objects which this concatenates into"""
 
-    children :list["NDObject"] = []
-    """Child object which concatenate into this one"""
+    children :list["NDObject"] = None
+    """Child/input objects which concatenate into this one"""
 
     data :NDTensor = None
     """Content to be multipled by pose or encoded via unpose"""
@@ -140,12 +182,45 @@ class NDObject():
     unpose :NDTensor = None
     """Transform to data/child space from local space"""
 
+    def __init__(self, key:str=None, data:NDTensor=None):
+        if (key):
+            self.name = key
+        if (data is not None):
+            self.data = data
+        pass
+
+    def child_find(self, key):
+        if (self.children is None):
+            return None
+        for k in self.children:
+            if k.key == key:
+                return k
+        return None
+
+    def child_add(self, child : "NDObject"):
+        assert(not child.name or not self.child_find(child.name))
+        assert(child is not self)
+        if (self.children is None):
+            self.children = []
+        self.children.append(child)
+        return self
+
     def __str__(self):
         ans = "{"; #\"ndobject\":true,"
-        if (self.key):
-            ans += f"\"key\"={self.key},"
-        if (self.pose != 0):
+        if (self.name):
+            ans += f"\"name\"={self.name},"
+        if (self.pose is not None):
             ans += f"\"pose\"={self.pose},"
+        if (self.unpose is not None):
+            ans += f"\"unpose\"={self.unpose},"
+        if (self.data is not None):
+            ans += f"\"data\"={self.data},"
+        if (self.children is not None and len(self.children) > 0):
+            ans += "\"children\":["
+            for child in self.children:
+                # TODO(leweyg): check recursion here
+                ans += f"{child},"
+            ans += "]"
         ans += "}"
         return ans
 
@@ -154,13 +229,35 @@ class NDScene():
     """Root query in the scene (not always world space)"""
     objects :dict[str,NDObject] = {}
     """Named NDObject's in the scene by name"""
-    tensors :dict[str,NDTensor] = {}
-    """Named tensors in the scene by name"""
+    tensors = NDTensor()
+    """Tensor of tensors in the scene"""
 
     def add_tensor(self, path:str, tensor:NDTensor):
-        self.tensors[path] = tensor
+        if (not tensor.key):
+            tensor.key = path
+        self.tensors.shape_append(tensor)
+
     def add_data(self, path:str, data:NDData):
-        self.tensors[path] = NDTensor.from_data(data)
+        tensor = NDTensor.from_data(data)
+        tensor.key = path
+        self.add_tensor(path, tensor)
+
+    def _inner_objects_str_(self):
+        ans = ""
+        for k,v in self.objects.items():
+            if (ans != ""):
+                ans += ","
+            ans += f"\"{k}\":{v}"
+        return ans
+
+    def __str__(self):
+        ans = "{"
+        if (self.root):
+            ans += f"\"root\"={self.root},"
+        ans += f"\"tensors\"={self.tensors},"
+        ans += "\"objects\"={" + self._inner_objects_str_() + "}"
+        ans += "}"
+        return ans
 
 class NDJson:
     # JSON read/write (static methods):
@@ -213,6 +310,10 @@ class NDTorch:
         import torch
         shape = torch.Size( [i.size for i in NDTensor.shape] )
         return shape
+    @staticmethod
+    def is_tensor(obj):
+        import torch
+        return torch.is_tensor(obj)
     @staticmethod
     def tensor(NDTensor : NDTensor):
         if (NDTensor.data.tensor):

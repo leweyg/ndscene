@@ -65,20 +65,30 @@ def text_from_console(dst):
     return ans
 
 def scene_of_text():
+    scene = ndscene.NDScene()
+
     text = "This is\na\ttest."
     text_data = ndscene.NDData.from_text(text)
+    text_node = ndscene.NDObject(data=text_data)
+    scene.add_data("text_data", text_data)
     text_tensor = text_data.ensure_tensor()
     print("text.shape=", text_tensor.shape)
 
-    layout = layout_text(text_tensor)
+    layout_data = layout_text(text_tensor)
+    layout_node = ndscene.NDObject(data=layout_data)
+    layout_node.pose = "layout_text"
+    #root = layout_node.child_add(root)
+    layout_node.child_add(text_node)
+    scene.root = layout_node
+    
 
     console = torch.zeros( [2, 10], dtype=torch.uint8 )
-    console = render_console( console, layout )
+    console = render_console( console, layout_data )
     #print(console)
     out_text = text_from_console(console)
     print(out_text)
 
-    return text_data
+    return scene
 
 def main_tests():
     print("ndscene glyph test starting:")
