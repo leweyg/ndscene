@@ -4,19 +4,44 @@
 
 def TodoND(desc=""):
     raise Exception("TODO_ND:" + desc)
+def NDTODO(desc=""):
+    TodoND(desc)
 
 """Data used to back tensors, this data can be a readily availabe native 'tensor',
 an uncompressed buffer, compressed MIME data, or an external path."""
 class DataND():
     tensor = None
+    format = None # MIME type or dtype
     buffer = None
-    buffer_dtype : str = None
-    buffer_size = None
-    compressed = None
-    compressed_type : str = None
-    compressed_size = None
     path : str = None
-    path_size : int = None
+
+    def ensure_tensor(self):
+        if (self.tensor):
+            return self.tensor
+        if (self.format):
+            return self.tensor_formatted()
+        NDTODO()
+
+    def ensure_buffer(self):
+        if (self.buffer):
+            return self.buffer
+        NDTODO()
+        
+    def tensor_formatted(self):
+        if (self.format == "text/plain"):
+            data = self.ensure_buffer()
+            import numpy
+            ans = numpy.array( list(data), dtype='U1' )
+            self.tensor = ans
+            return ans
+        NDTODO()
+
+    @staticmethod
+    def from_text(text:str):
+        ans = DataND()
+        ans.buffer = text
+        ans.format = "text/plain"
+        return ans
 
 
 """nestable/recursivly-defined tensor
