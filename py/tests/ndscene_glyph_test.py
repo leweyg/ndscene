@@ -66,7 +66,7 @@ def text_from_console(dst):
 
 def scene_of_text():
     text = "This is\na\ttest."
-    text_data = ndscene.DataND.from_text(text)
+    text_data = ndscene.NDData.from_text(text)
     text_tensor = text_data.ensure_tensor()
     print("text.shape=", text_tensor.shape)
 

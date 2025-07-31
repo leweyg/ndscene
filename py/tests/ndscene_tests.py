@@ -10,13 +10,13 @@ print("Defining...")
 
 def main_test_tensors():
     array = [ [ 1, 2, 3 ], [ 4, 5, 6 ] ]
-    tnd = ndscene.TensorND.from_arrays(array)
-    tnr = ndscene.TorchND.tensor(tnd)
+    tnd = ndscene.NDTensor.from_arrays(array)
+    tnr = ndscene.NDTorch.tensor(tnd)
     print(tnr)
 
 def main_tests():
     print("ndscene_tests.main_tests starting:")
-    desc = ndscene.ObjectND()
+    desc = ndscene.NDObject()
     print("desc=", desc)
     print("ndscene_tests.main_test_tensors:")
     main_test_tensors()
