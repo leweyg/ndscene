@@ -68,21 +68,22 @@ class SimpleNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(SimpleNN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)  # First fully connected layer
-        self.relu = nn.ReLU()                         # Activation function
-        self.ml1 = nn.Linear(hidden_size, hidden_size)
-        self.mr1 = nn.ReLU()
-        self.ml2 = nn.Linear(hidden_size, hidden_size)
-        self.mr2 = nn.ReLU()
+        #self.relu = nn.ReLU()                         # Activation function
+        #self.ml1 = nn.Linear(hidden_size, hidden_size)
+        #self.mr1 = nn.ReLU()
+        #self.ml2 = nn.Linear(hidden_size, hidden_size)
+        #self.mr2 = nn.ReLU()
         self.fc2 = nn.Linear(hidden_size, output_size) # Second fully connected layer
 
     def forward(self, x):
         x = self.fc1(x)
         #x = self.relu(x)
-        x = self.ml1(x)
-        x = self.mr1(x)
-        #x = self.ml2(x)
-        #x = self.mr2(x)
+        #x = self.ml1(x)
+        #x = self.mr1(x)
+        x = torch.nn.functional.relu(x)
         x = self.fc2(x)
+        x = torch.nn.functional.relu(x)
+        #x = self.mr2(x)
         return x
     
     def printParameters(self):
@@ -99,8 +100,8 @@ class SimpleSolverLoop:
     def __init__(self, model):
         self.model = model
         self.criterion = nn.MSELoss()
-        #self.optimizer = torch.optim.Rprop(model.parameters()) #, lr=0.05)
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
+        self.optimizer = torch.optim.Rprop(model.parameters()) #, lr=0.05)
+        #self.optimizer = torch.optim.Adam(model.parameters(), lr=0.61)
         pass
 
     def loss_as_out_minus_target(self, sampleOut, targetOut):
@@ -126,7 +127,7 @@ class SimpleSolverLoop:
 # Example usage:
 if __name__ == "__main__":
     input_dim = 2  # Number of input features
-    hidden_dim = 128 # Number of neurons in the hidden layer
+    hidden_dim = 8*8*3 # Number of neurons in the hidden layer
     output_dim = 3  # Number of output classes or values
 
     # Create an instance of the model
@@ -144,13 +145,13 @@ if __name__ == "__main__":
 
     print("Building solver loop...")
     solver = SimpleSolverLoop(model)
-    solverSteps = 300
+    solverSteps = 1200
     prevLossItem = 0
     for i in range(solverSteps):
         showInfo = False
         if ((i%10)==0):
             showInfo = True
-            print("Step:", i)
+            print("Step:", i/solverSteps, i)
         prevLossItem = solver.solve_step(img.input_tensor, img.target_tensor, prevLossItem, showInfo=showInfo)
 
     if True:
