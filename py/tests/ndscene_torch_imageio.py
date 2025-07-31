@@ -16,7 +16,7 @@ class SimpleImages():
             mx,_mxInds = self.target_tensor.max(0)
             mx,_mxInds = mx.max(0)
             print("Max1:", mx.shape, mx )
-        self.target_tensor = self.target_tensor.reshape( [size*size, 4] )
+        self.target_tensor = self.target_tensor.reshape( [size*size, 3] )
         SimpleImages.saveResult(self.target_tensor, RESULTS_PATH + "target.png")
         self.input_coords = SimpleImages._simpleCoordData(size)
         self.input_tensor = torch.tensor(self.input_coords).float()
@@ -24,12 +24,20 @@ class SimpleImages():
         pass
     @staticmethod
     def saveResult(result, path):
-        assert(result.shape[-1] == 4)
+        print("save image: result.shape=", result.shape)
+        chnls = result.shape[-1]
+        assert(chnls == 4 or chnls == 3)
         if (len(result.shape) == 2):
             import math
             side = int(math.sqrt( result.shape[0] ))
-            result = result.reshape( [side,side,4] )
-        result = ( result * 255.0 ).byte().cpu().numpy()
+            result = result.reshape( [side,side,chnls] )
+        result = ( result * 255.0 ).byte()
+        if (chnls==3):
+            ones = torch.full_like(result[:,:,0],255).unsqueeze(-1)
+            print("ones.shape=", ones.shape)
+            result = torch.cat((result,ones), -1 )
+            print("Result.shape=",result.shape)
+        result = result.cpu().numpy()
         print("Result:", result.shape, result.dtype)
         print("Writing to:", path)
         imageio.v3.imwrite( path, result )
@@ -39,6 +47,8 @@ class SimpleImages():
         cwd = os.getcwd()
         print("cwd=", cwd)
         info = imageio.v3.imread("tests/test_image.png")
+        print("InfoShape=", info.shape)
+        info = info[:,:,0:3]
         print("InfoShape=", info.shape)
         return info
     @staticmethod
@@ -117,7 +127,7 @@ class SimpleSolverLoop:
 if __name__ == "__main__":
     input_dim = 2  # Number of input features
     hidden_dim = 128 # Number of neurons in the hidden layer
-    output_dim = 4  # Number of output classes or values
+    output_dim = 3  # Number of output classes or values
 
     # Create an instance of the model
     model = SimpleNN(input_dim, hidden_dim, output_dim)
