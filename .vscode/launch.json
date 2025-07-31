@@ -20,6 +20,14 @@
             "program": "tests/ndscene_glyph_test.py",
             "cwd": "${workspaceFolder}/py",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Image Test",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "tests/ndscene_torch_imageio.py",
+            "cwd": "${workspaceFolder}/py",
+            "console": "integratedTerminal"
         }
     ]
 }
