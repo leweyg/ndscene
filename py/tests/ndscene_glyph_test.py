@@ -35,10 +35,10 @@ def layout_text(text_tensor):
         state[i,0] = col - 1
         state[i,1] = row
         state[i,2] = ord(glyph)
-    print(state)
+    #print(state)
     return state
 
-def draw_console(dst, layout):
+def render_console(dst, layout):
     count = layout.shape[0]
     for i in range(count):
         x = layout[i,0]
@@ -67,23 +67,23 @@ def text_from_console(dst):
 def scene_of_text():
     text = "This is\na\ttest."
     text_data = ndscene.DataND.from_text(text)
-    ans = text_data.ensure_tensor()
+    text_tensor = text_data.ensure_tensor()
+    print("text.shape=", text_tensor.shape)
 
-    layout = layout_text(ans)
+    layout = layout_text(text_tensor)
 
-    console = torch.zeros( [3, 10], dtype=torch.uint8 )
-    console = draw_console( console, layout )
-    print(console)
-    print(text_from_console(console))
+    console = torch.zeros( [2, 10], dtype=torch.uint8 )
+    console = render_console( console, layout )
+    #print(console)
+    out_text = text_from_console(console)
+    print(out_text)
 
-    print("text.shape=", ans.shape)
-
-    return ans
+    return text_data
 
 def main_tests():
     print("ndscene glyph test starting:")
-    desc = scene_of_text()
-    print("desc=", desc)
+    res = scene_of_text()
+    print("res=", res)
     print("ndscene glyph test done.")
     #exit(1)
     pass;
