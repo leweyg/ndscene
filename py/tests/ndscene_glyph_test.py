@@ -2,6 +2,10 @@
 print("Importing...")
 
 # without install:
+import os
+print("pwd=", os.getcwd())
+import sys
+sys.path.append(os.getcwd())
 import ndscenepy.ndscene as ndscene
 import torch
 
@@ -69,13 +73,13 @@ def scene_of_text():
 
     text = "This is\na\ttest."
     text_data = ndscene.NDData.from_text(text)
-    text_node = ndscene.NDObject(data=text_data)
+    text_node = ndscene.NDObject(content=text_data)
     scene.add_data("text_data", text_data)
     text_tensor = text_data.ensure_tensor()
     print("text.shape=", text_tensor.shape)
 
     layout_data = layout_text(text_tensor)
-    layout_node = ndscene.NDObject(data=layout_data)
+    layout_node = ndscene.NDObject(content=layout_data)
     layout_node.pose = "layout_text"
     #root = layout_node.child_add(root)
     layout_node.child_add(text_node)

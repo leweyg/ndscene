@@ -84,8 +84,12 @@ class NDTensor():
         pass
 
     @staticmethod
-    def ensure(input):
+    def ensure_is_tensor(input):
         assert(not isinstance(input,str))
+        if (isinstance(input,NDTensor)):
+            return input
+        if (isinstance(input,NDData)):
+            return NDTensor.from_data(input)
         if (NDTorch.is_tensor(input)):
             ans = NDTensor()
             ans.data = NDData.from_tensor(input)
@@ -173,7 +177,7 @@ class NDObject():
     children :list["NDObject"] = None
     """Child/input objects which concatenate into this one"""
 
-    data :NDTensor = None
+    content :NDTensor = None
     """Content to be multipled by pose or encoded via unpose"""
 
     pose :NDTensor = None
@@ -182,11 +186,12 @@ class NDObject():
     unpose :NDTensor = None
     """Transform to data/child space from local space"""
 
-    def __init__(self, key:str=None, data:NDTensor=None):
+    def __init__(self, key:str=None, content:NDTensor=None):
         if (key):
             self.name = key
-        if (data is not None):
-            self.data = data
+        if (content is not None):
+            content = NDTensor.ensure_is_tensor(content)
+            self.content = content
         pass
 
     def child_find(self, key):
@@ -213,8 +218,8 @@ class NDObject():
             ans += f"\"pose\"={self.pose},"
         if (self.unpose is not None):
             ans += f"\"unpose\"={self.unpose},"
-        if (self.data is not None):
-            ans += f"\"data\"={self.data},"
+        if (self.content is not None):
+            ans += f"\"data\"={self.content},"
         if (self.children is not None and len(self.children) > 0):
             ans += "\"children\":["
             for child in self.children:
