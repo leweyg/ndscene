@@ -83,17 +83,51 @@ class NDTensor():
             self.data = initData
         pass
 
+    def tensor_from_dict(obj):
+        import torch
+        torchDType = torch.float
+        shape = []
+        data = None
+        if ("dtype" in obj):
+            pass # more of these
+        if ("shape" in obj):
+            for sv in obj["shape"]:
+                if (isinstance(sv,int)):
+                    shape.append(sv)
+                else:
+                    NDTODO()
+        if ('data' in obj):
+            dv = obj['data']
+            if (isinstance(dv,list)):
+                data = dv
+        ans = torch.tensor(data, dtype=torchDType).reshape(shape)
+        return ans
+
+
     @staticmethod
-    def ensure_is_tensor(input):
-        assert(not isinstance(input,str))
-        if (isinstance(input,NDTensor)):
-            return input
-        if (isinstance(input,NDData)):
-            return NDTensor.from_data(input)
-        if (NDTorch.is_tensor(input)):
+    def ensure_is_tensor(obj, scene=None):
+        if (isinstance(obj,str)):
+            if (scene and obj in scene.tensors):
+                raw_state = scene.tensors[obj]
+                ans = NDTensor.ensure_is_tensor(raw_state)
+                if (raw_state is not ans):
+                    # modify the scene to reference the allocated tensor
+                    scene.tensors[obj] = ans
+                return ans
+            assert(not isinstance(obj,str))
+        if (isinstance(obj,NDTensor)):
+            return obj
+        if (isinstance(obj,NDData)):
+            return NDTensor.from_data(obj)
+        if (NDTorch.is_tensor(obj)):
             ans = NDTensor()
-            ans.data = NDData.from_tensor(input)
+            ans.data = NDData.from_tensor(obj)
             return ans
+        if (isinstance(obj,dict)):
+            # generic python dictionary, let's check it out:
+            if ("shape" in obj and "data" in obj):
+                return NDTensor.tensor_from_dict(obj)
+            NDTODO();
         NDTODO()
 
     def shape_ensure(self):
@@ -293,6 +327,13 @@ class NDJson:
     def json_object(data:NDObject)->dict:
         NDTODO()
         return None
+    @staticmethod
+    def scene_from_path(path:str, allow_reads=True):
+        with open(path,"r") as file:
+            json_text = file.read()
+        import json
+        json_obj = json.loads(json_text)
+        return json_obj # cast to NDScene?
 
 
 class NDMath:

@@ -28,6 +28,14 @@
             "program": "tests/ndscene_torch_imageio.py",
             "cwd": "${workspaceFolder}/py",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Freed Go Test",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/ndscene_freed_go.py",
+            "cwd": "${workspaceFolder}/py",
+            "console": "integratedTerminal"
         }
     ]
 }
