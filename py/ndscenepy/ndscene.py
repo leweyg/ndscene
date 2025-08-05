@@ -17,6 +17,17 @@ class NDData():
     path : str = None
     """File or URL path to the buffer of type format to load into the tensor"""
 
+    def __init__(self, buffer=None, format=None, path=None, tensor=None):
+        if (buffer):
+            self.buffer = buffer
+        if (format):
+            self.format = format
+        if (path):
+            self.path = path
+        if (tensor):
+            self.tensor = tensor
+        pass
+
     def ensure_tensor(self):
         if (self.tensor):
             return self.tensor
@@ -33,7 +44,7 @@ class NDData():
         if (self.format == "text/plain"):
             data = self.ensure_buffer()
             import numpy
-            ans = numpy.array( list(data), dtype='U1' )
+            ans = numpy.array( list(data) ) #, dtype='U1' )
             self.tensor = ans
             return ans
         NDTODO()
@@ -55,7 +66,7 @@ class NDData():
     @staticmethod
     def from_text(text:str):
         ans = NDData()
-        ans.buffer = text
+        ans.buffer = [ord(t) for t in text]
         ans.format = "text/plain"
         return ans
     @staticmethod
@@ -83,7 +94,9 @@ class NDTensor():
             self.data = initData
         pass
 
-    def tensor_from_dict(obj):
+
+    @staticmethod
+    def native_tensor_from_dict(obj, scene):
         import torch
         torchDType = torch.float
         shape = []
@@ -98,14 +111,33 @@ class NDTensor():
                     NDTODO()
         if ('data' in obj):
             dv = obj['data']
+            if (isinstance(dv,dict)):
+                if ("0" in dv or 0 in dv):
+                    dv = list(dv.values())
             if (isinstance(dv,list)):
                 data = dv
         ans = torch.tensor(data, dtype=torchDType).reshape(shape)
         return ans
-
+    
+    @staticmethod
+    def ensure_is_tensor(obj, scene):
+        if (isinstance(obj,NDTensor)):
+            return obj
+        return NDTensor.from_object(obj, scene)
+    
+    @staticmethod
+    def from_method_object(obj, scene:"NDScene"):
+        if (isinstance(obj,str)):
+            if (obj not in scene.tensors):
+                method = scene.methods.get(obj)
+                if (not method):
+                    method = NDMethod(obj)
+                    scene.methods[obj] = method
+                return method
+        return NDTensor.from_object(obj, scene);
 
     @staticmethod
-    def ensure_is_tensor(obj, scene=None):
+    def from_object(obj, scene):
         if (isinstance(obj,str)):
             if (scene and obj in scene.tensors):
                 raw_state = scene.tensors[obj]
@@ -126,8 +158,22 @@ class NDTensor():
         if (isinstance(obj,dict)):
             # generic python dictionary, let's check it out:
             if ("shape" in obj and "data" in obj):
-                return NDTensor.tensor_from_dict(obj)
-            NDTODO();
+                return NDTensor.native_tensor_from_dict(obj, scene)
+            if ("shape" in obj):
+                NDTODO()
+            if ("data" in obj):
+                NDTODO()
+            if ("path" in obj):
+                path = obj['path']
+                if (path in scene.tensors):
+                    return scene.tensors[path]
+                loader = NDTensor.from_data(NDData(path=path))
+                scene.tensors[path] = loader
+                return loader
+            dans = {}
+            for k,v in obj.items():
+                dans[k]  = NDTensor.from_object(v, scene)
+            return dans
         NDTODO()
 
     def shape_ensure(self):
@@ -220,20 +266,48 @@ class NDObject():
     unpose :NDTensor = None
     """Transform to data/child space from local space"""
 
-    def __init__(self, key:str=None, content:NDTensor=None):
+    def __init__(self, key:str=None, pose:NDTensor=None, content:NDTensor=None, scene:"NDScene"=None):
         if (key):
             self.name = key
         if (content is not None):
-            content = NDTensor.ensure_is_tensor(content)
+            content = NDTensor.ensure_is_tensor(content, scene)
             self.content = content
+        if (pose is not None):
+            self.pose = pose
         pass
 
-    def child_find(self, key):
+    @staticmethod
+    def from_dict(obj, scene):
+        ans = NDObject()
+        ans.__dict__.update(obj)
+        if ans.children:
+            nc = []
+            for child in ans.children:
+                if (isinstance(child,str)):
+                    nchild = scene.objects[child]
+                else:
+                    assert(isinstance(child,dict))
+                    nchild = NDObject.from_dict(child, scene)
+                nc.append(nchild)
+            ans.children = nc
+        if ans.pose:
+            ans.pose = NDTensor.from_method_object(ans.pose, scene)
+        if ans.unpose:
+            ans.unpose = NDTensor.from_method_object(ans.unpose, scene)
+        if ans.content:
+            ans.content = NDTensor.from_object(ans.content, scene)
+        return ans
+
+    def child_find(self, name, recursive=False):
         if (self.children is None):
             return None
         for k in self.children:
-            if k.key == key:
+            if k.name == name:
                 return k
+        if recursive:
+            for k in self.children:
+                ans = k.child_find(name, recursive=recursive)
+                if ans: return ans
         return None
 
     def child_add(self, child : "NDObject"):
@@ -262,19 +336,40 @@ class NDObject():
             ans += "]"
         ans += "}"
         return ans
+    
+class NDMethod():
+    name :str = None
+    
+    def __init__(self, name:str):
+        self.name = name
+        pass
 
 class NDScene():
     root :NDObject = None
     """Root query in the scene (not always world space)"""
     objects :dict[str,NDObject] = {}
     """Named NDObject's in the scene by name"""
-    tensors = NDTensor()
+    tensors :dict[str,NDTensor] = {}
     """Tensor of tensors in the scene"""
+    methods :dict[str,NDMethod] = {}
+
+    @staticmethod
+    def from_object(obj:dict):
+        ans = NDScene()
+        ans.__dict__.update(obj)
+        nv = {}
+        for k,v in ans.tensors.items():
+            ans.tensors[k] = NDTensor.from_object(v, ans)
+        for k,v in ans.objects.items():
+            ans.tensors[k] = NDObject.from_dict(v, ans)
+        ans.root = NDObject.from_dict(ans.root, ans)
+        return ans
 
     def add_tensor(self, path:str, tensor:NDTensor):
         if (not tensor.key):
             tensor.key = path
-        self.tensors.shape_append(tensor)
+        assert(not path in self.tensors)
+        self.tensors[path] = tensor
 
     def add_data(self, path:str, data:NDData):
         tensor = NDTensor.from_data(data)
@@ -333,7 +428,17 @@ class NDJson:
             json_text = file.read()
         import json
         json_obj = json.loads(json_text)
-        return json_obj # cast to NDScene?
+        return NDScene.from_object(json_obj)
+    @staticmethod
+    def find_child_by_name(obj, name:str):
+        if ("name" in obj):
+            if (obj["name"] == name):
+                return obj
+        if ("children" in obj):
+            for child in obj["children"]:
+                ans = NDJson.find_child_by_name(child, name)
+                if (ans): return ans
+        return None
 
 
 class NDMath:

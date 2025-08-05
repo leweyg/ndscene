@@ -26,12 +26,12 @@ def layout_text(text_tensor):
     row = 0
     glyph = 0
     for i in range(count):
-        glyph = text_tensor[i]
-        if (glyph == '\n'):
+        glyph = text_tensor[i] #.item()
+        if (glyph == ord('\n')):
             row = row + 1
             col = 0
             #continue
-        elif (glyph == '\t'):
+        elif (glyph == ord('\t')):
             spaces = 4
             col = ( col + spaces ) - ( col % spaces )
             #continue
@@ -39,7 +39,7 @@ def layout_text(text_tensor):
             col = col + 1
         state[i,0] = col - 1
         state[i,1] = row
-        state[i,2] = ord(glyph)
+        state[i,2] = glyph # ord(glyph)
     #print(state)
     return state
 
@@ -74,8 +74,9 @@ def scene_of_text():
 
     text = "This is\na\ttest."
     text_data = ndscene.NDData.from_text(text)
-    text_node = ndscene.NDObject(content=text_data)
-    scene.add_data("text_data", text_data)
+    text_tensor = ndscene.NDTensor.from_data(text_data)
+    text_node = ndscene.NDObject(content=text_tensor, scene=scene)
+    scene.add_tensor("text_data", text_tensor)
     text_tensor = text_data.ensure_tensor()
     print("text.shape=", text_tensor.shape)
 
@@ -93,12 +94,13 @@ def scene_of_text():
     out_text = text_from_console(console)
     print(out_text)
 
-    return scene
+    return None # scene
 
 def main_tests():
     print("ndscene glyph test starting:")
     res = scene_of_text()
-    print("res=", res)
+    if res:
+        print("res=", res)
     print("ndscene glyph test done.")
     #exit(1)
     pass;

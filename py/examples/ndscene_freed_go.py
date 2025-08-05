@@ -14,7 +14,12 @@ def read_file_by_path(path):
 def main_freed_go_test():
     print("Main Freed Go test...")
     scene = ndscene.NDJson.scene_from_path("../json/freed_go/view_2_scene.json")
-    test_points = ndscene.NDTensor.ensure_is_tensor( scene['tensors']['projected_points'] )
+    test_points = scene.tensors['projected_points']
+    test_camera = scene.root.child_find('camera', recursive=True)
+    image_path = test_camera.child_find('image', recursive=True)
+    print("test_camera:", test_camera)
+    test_pos_world = test_points[:,0,:]
+    test_pos_lens = test_points[:,1,:]
     #print("Scene=", scene)
     pass;
 
