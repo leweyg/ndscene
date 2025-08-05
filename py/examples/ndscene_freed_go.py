@@ -17,6 +17,7 @@ def main_freed_go_test():
     test_points = scene.tensors['projected_points']
     test_camera = scene.root.child_find('camera', recursive=True)
     image_path = test_camera.child_find('image', recursive=True)
+    image_tensor = image_path.content.ensure_tensor(scene)
     print("test_camera:", test_camera)
     test_pos_world = test_points[:,0,:]
     test_pos_lens = test_points[:,1,:]

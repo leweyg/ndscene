@@ -28,12 +28,34 @@ class NDData():
             self.tensor = tensor
         pass
 
-    def ensure_tensor(self):
+    def ensure_tensor(self, scene:"NDScene"):
         if (self.tensor):
             return self.tensor
-        if (self.format):
-            return self.tensor_formatted()
+        if (self.buffer):
+            if (self.format):
+                return self.tensor_formatted()
+            NDTODO()
+        if (self.path):
+            format = self.format if self.format else NDData.geuss_format_from_path(self.path)
+            if (format.startswith("image/")):
+                import imageio
+                self.tensor = imageio.v3.imread(scene.path_root + "/" + self.path)
+                return self.tensor
+            NDTODO()
         NDTODO()
+
+
+    @staticmethod
+    def geuss_format_from_path(path:str):
+        path = path.lower()
+        if (path.endswith(".png")):
+            return "image/png"
+        if (path.endswith(".jpg") or path.endswith(".jpeg")):
+            return "image/jpeg"
+        if (path.endswith(".png")):
+            return "image/png"
+        NDTODO("geuss_format_from_path for '" + path + "'")
+        return None
 
     def ensure_buffer(self):
         if (self.buffer):
@@ -85,13 +107,13 @@ class NDTensor():
     dtype :str = None
     data :NDData = None
 
-    def __init__(self, initSize:int=None, initKey:str=None, initData:NDData=None):
-        if (initSize):
-            self.size = initSize
-        if (initKey):
-            self.key = initKey
-        if (initData):
-            self.data = initData
+    def __init__(self, size:int=None, key:str=None, data:NDData=None):
+        if (size):
+            self.size = size
+        if (key):
+            self.key = key
+        if (data):
+            self.data = data
         pass
 
 
@@ -118,6 +140,16 @@ class NDTensor():
                 data = dv
         ans = torch.tensor(data, dtype=torchDType).reshape(shape)
         return ans
+    
+    def ensure_tensor(self, scene:"NDScene"):
+        if (self.data and self.data.tensor):
+            return self.data.tensor
+        if (self.data):
+            tensor = self.data.ensure_tensor(scene)
+            if (not self.shape):
+                self.shape = [NDTensor(size=si) for si in tensor.shape]
+            return tensor
+        NDTODO()
     
     @staticmethod
     def ensure_is_tensor(obj, scene):
@@ -212,7 +244,7 @@ class NDTensor():
         if (self.key):
             ans += f"\"{self.key}\":"
         if (self.size):
-            ans += "x" + self.size
+            ans += f"x{self.size}"
         if (self.shape and len(self.shape) > 0):
             ans += "["
             for s in self.shape:
@@ -224,6 +256,9 @@ class NDTensor():
             ans += f"={self.data}"
         ans += "}"
         return ans
+    
+    def __repr__(self):
+        return str(self)
     
     @staticmethod
     def shape_of(input_list : list)->list[int]:
@@ -352,11 +387,15 @@ class NDScene():
     tensors :dict[str,NDTensor] = {}
     """Tensor of tensors in the scene"""
     methods :dict[str,NDMethod] = {}
+    """Table of methods/functions used by the scene"""
+    path_root :str = None
+    """Path root used for file loading"""
 
     @staticmethod
-    def from_object(obj:dict):
+    def from_object(obj:dict, path_dir:str=""):
         ans = NDScene()
         ans.__dict__.update(obj)
+        ans.path_root = path_dir
         nv = {}
         for k,v in ans.tensors.items():
             ans.tensors[k] = NDTensor.from_object(v, ans)
@@ -364,6 +403,10 @@ class NDScene():
             ans.tensors[k] = NDObject.from_dict(v, ans)
         ans.root = NDObject.from_dict(ans.root, ans)
         return ans
+    
+    @staticmethod
+    def from_file_path(self, path:str):
+        return NDJson.scene_from_path(path)
 
     def add_tensor(self, path:str, tensor:NDTensor):
         if (not tensor.key):
@@ -423,12 +466,15 @@ class NDJson:
         NDTODO()
         return None
     @staticmethod
-    def scene_from_path(path:str, allow_reads=True):
+    def scene_from_path(path:str):
         with open(path,"r") as file:
             json_text = file.read()
         import json
         json_obj = json.loads(json_text)
-        return NDScene.from_object(json_obj)
+        path_root = ""
+        if ("/" in path):
+            path_root = path[:path.rfind("/")]
+        return NDScene.from_object(json_obj, path_root)
     @staticmethod
     def find_child_by_name(obj, name:str):
         if ("name" in obj):
