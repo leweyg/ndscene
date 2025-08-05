@@ -332,6 +332,26 @@ class NDObject():
         if ans.content:
             ans.content = NDTensor.from_object(ans.content, scene)
         return ans
+    
+    def parent_any(self):
+        if (self.parents and len(self.parents)):
+            return self.parents[0]
+        return None
+    
+    def parent_any_to_world(self):
+        # todo: improve this
+        return self.parent_any()
+    
+    def child_find_parent(self, target, recursive=True):
+        if (self.children is None):
+            return None
+        for child in self.children:
+            if child == target:
+                return self
+            if recursive:
+                ans = child.child_find_parent(target, recursive)
+                if (ans): return ans
+        return None
 
     def child_find(self, name, recursive=False):
         if (self.children is None):
@@ -400,13 +420,28 @@ class NDScene():
         for k,v in ans.tensors.items():
             ans.tensors[k] = NDTensor.from_object(v, ans)
         for k,v in ans.objects.items():
-            ans.tensors[k] = NDObject.from_dict(v, ans)
+            ans.objects[k] = NDObject.from_dict(v, ans)
         ans.root = NDObject.from_dict(ans.root, ans)
         return ans
     
     @staticmethod
     def from_file_path(self, path:str):
         return NDJson.scene_from_path(path)
+    
+    def ensure_parents(self, obj:NDObject):
+        if (obj.parent_any()):
+            return
+        par_top = self.root.child_find_parent(obj)
+        par = par_top
+        if (par):
+            obj.parents = [par]
+            while (par and not par.parent_any()):
+                next_par = self.root.child_find_parent(par)
+                if (next_par):
+                    par.parents = [next_par]
+                par = next_par
+        return par_top
+
 
     def add_tensor(self, path:str, tensor:NDTensor):
         if (not tensor.key):
@@ -490,10 +525,14 @@ class NDJson:
 class NDMath:
     @staticmethod
     def inverse_pose(pose:NDTensor):
-        NDTODO()
+        import torch
+        pose = NDTorch.ensure_tensor(pose)
+        pose = torch.linalg.inv(pose)
         return pose;
     @staticmethod
     def apply_pose_to_data(pose:NDTensor, data:NDTensor):
+        if (pose is None):
+            return data
         NDTODO() # batch-matrix-multiply by default
         return pose * data
 
@@ -512,6 +551,18 @@ class NDTorch:
         import torch
         return torch.is_tensor(obj)
     @staticmethod
+    def ensure_tensor(obj):
+        import numpy
+        import torch
+        if (isinstance(obj, NDTensor)):
+            obj = obj.ensure_tensor()
+        if (torch.is_tensor(obj)):
+            return obj
+        if (isinstance(obj,numpy.ndarray)):
+            return torch.from_numpy(obj)
+        NDTODO()
+        
+    @staticmethod
     def tensor(NDTensor : NDTensor):
         if (NDTensor.data.tensor):
             return NDTensor.data.tensor
@@ -527,20 +578,69 @@ class NDTorch:
 class NDRender:
     state_result :NDTensor = None
     stack_pose   :list[NDTensor] = None
+    scene :NDScene = None
 
-    # Core API (NDTensor only):
+    def __init__(self):
+        self.stack_pose = []
+
+    # Scene API (NDScene level):
+    def update_object_from_world(self, target:NDObject, scene:NDScene):
+        assert(self.state_result is None)
+        assert(self.scene is None)
+        assert(len(self.stack_pose) == 0)
+        assert(scene)
+        assert(target.content is not None)
+        self.scene = scene
+
+        self.scene.ensure_parents(target)
+
+        excluding = {}
+        excluding[target] = True
+        self.set_result(target.content)
+        world = self.push_scene_back_to_world(target)
+        world_depth = len(self.stack_pose)
+        
+        self.push_children_data(world, excluding)
+        done_depth = len(self.stack_pose)
+        assert(done_depth == world_depth)
+        self.stack_pose.clear()
+        self.state_result = None
+        self.scene = None
+
+    def push_scene_back_to_world(self, target:NDObject):
+        cursor = target
+        latest = cursor
+        while (cursor):
+            # first push inverses back to world:
+            latest = cursor
+            self.push_pose(cursor.unpose, cursor.pose)
+            cursor = cursor.parent_any_to_world()
+        return latest
+    
+    def push_children_data(self, target:NDObject, excluding:dict[NDObject,bool]):
+        if (target in excluding):
+            return;
+        self.push_pose(target.pose, target.unpose)
+        if (target.content is not None):
+            self.apply_data(target.content)
+        if (target.children):
+            for child in target.children:
+                self.push_children_data(child, excluding)
+        self.pop_pose()
+
+    # Rendering API (NDTensor only):
     def set_result(self, res :NDTensor):
         self.state_result = NDJson.ensure_tensor(res)
         
     def push_pose(self, pose: NDTensor, unpose :NDTensor):
         """pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored."""
-        if (pose):
+        if (pose is not None):
             self.stack_pose.append(pose)
             return
-        if (unpose):
+        if (unpose is not None):
             self.stack_pose.append(NDMath.inverse_pose(unpose))
             return;
-        raise "Either pose or unpose must be defined for 'push_pose'."
+        self.stack_pose.append(None)
 
     def apply_data(self, data :NDTensor):
         """concatenates the data to existing input data given the current transform stack."""

@@ -21,6 +21,9 @@ def main_freed_go_test():
     print("test_camera:", test_camera)
     test_pos_world = test_points[:,0,:]
     test_pos_lens = test_points[:,1,:]
+    # rendering tests:
+    renderer = ndscene.NDRender()
+    renderer.update_object_from_world(image_path, scene)
     #print("Scene=", scene)
     pass;
 
