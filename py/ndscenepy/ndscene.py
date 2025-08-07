@@ -143,7 +143,7 @@ class NDTensor():
         return ans
     
     def ensure_tensor(self, scene:"NDScene"):
-        if (self.data and self.data.tensor):
+        if (self.data and self.data.tensor is not None):
             return self.data.tensor
         if (self.data):
             tensor = self.data.ensure_tensor(scene)
@@ -413,14 +413,16 @@ class NDMethod():
             import torch
             ans = data.copy()
             verts = ans['vertices']
+            # XYZW to XY (normalize by W, drop Z)
             ws = verts[:,-1].unsqueeze(-1)
             xy = verts[:,0:2]
             xy = xy / ws
+            # XY to XY1, scale to integer shape space
             xy1 = torch.concat([xy,torch.ones_like(ws)], -1)
             scl = [ 0.5 * target.shape[0].size, 0.0, 0.5 * target.shape[1].size, 0.0, 0.5, 0.5 ]
             scl = torch.tensor(scl).reshape(3,2)
-            xy1 = torch.mm(xy1, scl)
-            ans['vertices'] = verts
+            xy = torch.mm(xy1, scl)
+            ans['vertices'] = xy
             return ans
         scene.ensure_method('pixel_index_from_unit_viewport').callback = pixel_index_from_unit_viewport
 
@@ -629,6 +631,7 @@ class NDTorch:
 
 class NDRender:
     state_result :NDTensor = None
+    state_result_tensor = None
     stack_pose   :list[NDTensor] = None
     scene :NDScene = None
 
@@ -648,7 +651,7 @@ class NDRender:
 
         excluding = {}
         excluding[target] = True
-        self.set_result(target.content)
+        self.set_result(target.content, target.content.ensure_tensor(scene))
         world = self.push_scene_back_to_world(target)
         world_depth = len(self.stack_pose)
         
@@ -681,8 +684,9 @@ class NDRender:
         self.pop_pose()
 
     # Rendering API (NDTensor only):
-    def set_result(self, res :NDTensor):
+    def set_result(self, res :NDTensor, res_tensor):
         self.state_result = NDJson.ensure_tensor(res)
+        self.state_result_tensor = res_tensor
         
     def push_pose(self, pose: NDTensor, unpose :NDTensor):
         """pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored."""
@@ -700,7 +704,10 @@ class NDRender:
         for p in reversed(self.stack_pose):
             ans = NDMath.apply_pose_to_data(p, ans, self.state_result)
         if (self.state_result):
-            self.state_result.copy(ans)
+            dst = self.state_result_tensor
+            dst = NDRender.scatterND(dst, ans['vertices'], ans.get('color'))
+            self.state_result_tensor = dst
+            self.state_result.data.tensor = dst
             return self.state_result
         return ans
 
@@ -713,3 +720,41 @@ class NDRender:
     def get_result(self) -> NDTensor:
         """returns the data transformed by the poses"""
         return self.state_result
+    
+    @staticmethod
+    def scatterND(target, src_index, src_vals):
+        import torch
+        indexN = src_index.shape[-1]
+        channels = target.shape[-1]
+        bounds = target.shape
+        pos = src_index.int()
+        vals_shape = list(pos.shape)
+        vals_shape[-1] = channels
+        pos_min = torch.zeros( [indexN], dtype=torch.int )
+        pos_max = torch.tensor( bounds[0:indexN], dtype=torch.int ) - 1
+        pos = torch.clamp(pos, min=pos_min, max=pos_max)
+        pos = pos.int()
+        stride = 1
+        flat_size = 1
+        for di in range(indexN):
+            pos[:,di] = pos[:,di] * stride
+            stride = stride * bounds[di]
+        flat_size = stride
+        pos = torch.sum(pos, dim=-1)
+        target = torch.tensor(target)
+        if (src_vals is None):
+            src_vals = torch.ones( vals_shape )
+            if (target.dtype == torch.uint8):
+                src_vals = src_vals * 255
+                src_vals = src_vals.byte()
+        print("Ready for scatterND:")
+        pos = pos.unsqueeze(-1).repeat([1,2]) # repeat indices for now...
+        print("pos.shape=", pos.shape)
+        print("vals.shape=", src_vals.shape)
+        print("target.shape=", target.shape)
+        linear_target_shape = [ flat_size, channels ]
+        flat_target = target.reshape( linear_target_shape )
+        print("flat_target.shape=", flat_target.shape)
+        flat_target.scatter_( 0, pos, src_vals ) # leave this part out
+        target = flat_target.reshape( target.shape )
+        return target;
