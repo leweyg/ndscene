@@ -3,6 +3,7 @@
 # NDScene { NDObject { NDTensor { NDData { tensor/compression/path } } } } 
 
 def NDTODO(desc=""):
+    print("NDTODO:", desc)
     raise Exception("NDTODO:" + desc)
 
 """Data is used to load and store tensors, converting between remote 'path',
@@ -163,8 +164,7 @@ class NDTensor():
             if (obj not in scene.tensors):
                 method = scene.methods.get(obj)
                 if (not method):
-                    method = NDMethod(obj)
-                    scene.methods[obj] = method
+                    method = scene.ensure_method(obj)
                 return method
         return NDTensor.from_object(obj, scene);
 
@@ -394,10 +394,36 @@ class NDObject():
     
 class NDMethod():
     name :str = None
+    callback = None
     
     def __init__(self, name:str):
         self.name = name
         pass
+
+    def apply_method_to_data(self, data:NDData, target:NDData):
+        if (not self.callback):
+            msg = "Need to associate a callback for '" + self.name + "'."
+            print(msg)
+            NDTODO(msg)
+        return self.callback(data, target)
+    
+    @staticmethod
+    def setup_standard_methods(scene:"NDScene"):
+        def pixel_index_from_unit_viewport(data:NDData, target:NDData):
+            import torch
+            ans = data.copy()
+            verts = ans['vertices']
+            ws = verts[:,-1].unsqueeze(-1)
+            xy = verts[:,0:2]
+            xy = xy / ws
+            xy1 = torch.concat([xy,torch.ones_like(ws)], -1)
+            scl = [ 0.5 * target.shape[0].size, 0.0, 0.5 * target.shape[1].size, 0.0, 0.5, 0.5 ]
+            scl = torch.tensor(scl).reshape(3,2)
+            xy1 = torch.mm(xy1, scl)
+            ans['vertices'] = verts
+            return ans
+        scene.ensure_method('pixel_index_from_unit_viewport').callback = pixel_index_from_unit_viewport
+
 
 class NDScene():
     root :NDObject = None
@@ -441,8 +467,14 @@ class NDScene():
                     par.parents = [next_par]
                 par = next_par
         return par_top
-
-
+    
+    def ensure_method(self, path:str) -> NDMethod:
+        if (path in self.methods):
+            return self.methods[path]
+        ans = NDMethod(path)
+        self.methods[path] = ans
+        return ans
+    
     def add_tensor(self, path:str, tensor:NDTensor):
         if (not tensor.key):
             tensor.key = path
@@ -530,9 +562,29 @@ class NDMath:
         pose = torch.linalg.inv(pose)
         return pose;
     @staticmethod
-    def apply_pose_to_data(pose:NDTensor, data:NDTensor):
+    def apply_pose_to_data(pose:NDTensor, data:NDTensor, target:NDTensor):
         if (pose is None):
             return data
+        if (isinstance(pose,NDMethod)):
+            return pose.apply_method_to_data(data,target)
+        pose_is_dict = isinstance(pose,dict)
+        data_is_dict = isinstance(data,dict)
+        if (data_is_dict and not pose_is_dict):
+            ans = data.copy()
+            assert('vertices' in ans)
+            verts = ans['vertices']
+            import torch
+            print("verts.shape=", verts.shape)
+            print("pose.shape=", pose.shape)
+            if (verts.shape[-1] == 3):
+                ones = torch.ones_like(verts[:,0]).unsqueeze(-1)
+                verts = torch.concat([verts,ones],-1)
+            print("verts.shape=", verts.shape)
+            print("pose.shape=", pose.shape)
+            
+            verts = torch.mm(verts, pose)
+            ans['vertices'] = verts
+            return ans
         NDTODO() # batch-matrix-multiply by default
         return pose * data
 
@@ -646,7 +698,7 @@ class NDRender:
         """concatenates the data to existing input data given the current transform stack."""
         ans = data
         for p in reversed(self.stack_pose):
-            ans = NDMath.apply_pose_to_data(p, ans)
+            ans = NDMath.apply_pose_to_data(p, ans, self.state_result)
         if (self.state_result):
             self.state_result.copy(ans)
             return self.state_result
