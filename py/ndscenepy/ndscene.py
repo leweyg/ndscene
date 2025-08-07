@@ -45,6 +45,15 @@ class NDData():
             NDTODO()
         NDTODO()
 
+    def save_to_path(self, new_path=None):
+        if (new_path):
+            self.path = new_path
+        self.write_tensor_to_path(self.tensor.numpy(), self.path)
+
+    @staticmethod
+    def write_tensor_to_path(val, path):
+        import imageio
+        imageio.v3.imwrite(path, val)
 
     @staticmethod
     def geuss_format_from_path(path:str):
@@ -654,13 +663,16 @@ class NDRender:
         self.set_result(target.content, target.content.ensure_tensor(scene))
         world = self.push_scene_back_to_world(target)
         world_depth = len(self.stack_pose)
+        res = self.state_result_tensor
         
         self.push_children_data(world, excluding)
         done_depth = len(self.stack_pose)
         assert(done_depth == world_depth)
         self.stack_pose.clear()
         self.state_result = None
+        self.state_result_tensor = None
         self.scene = None
+        return res
 
     def push_scene_back_to_world(self, target:NDObject):
         cursor = target
@@ -736,11 +748,11 @@ class NDRender:
         pos = pos.int()
         stride = 1
         flat_size = 1
-        for di in range(indexN):
+        for di in reversed(range(indexN)):
             pos[:,di] = pos[:,di] * stride
             stride = stride * bounds[di]
-        flat_size = stride
         pos = torch.sum(pos, dim=-1)
+        flat_size = stride
         target = torch.tensor(target)
         if (src_vals is None):
             src_vals = torch.ones( vals_shape )

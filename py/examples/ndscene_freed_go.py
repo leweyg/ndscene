@@ -26,6 +26,7 @@ def main_freed_go_test():
     renderer = ndscene.NDRender()
     renderer.update_object_from_world(image_path, scene)
     #print("Scene=", scene)
+    image_path.content.data.save_to_path("test_output.png")
     pass;
 
 
