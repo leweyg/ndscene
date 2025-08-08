@@ -41,6 +41,8 @@ class NDData():
             if (format.startswith("image/")):
                 import imageio
                 self.tensor = imageio.v3.imread(scene.path_root + "/" + self.path)
+                import torch
+                self.tensor = torch.tensor(self.tensor)
                 return self.tensor
             NDTODO()
         NDTODO()
@@ -417,29 +419,48 @@ class NDMethod():
             NDTODO(msg)
         return self.callback(data, target)
     
+
     @staticmethod
     def setup_standard_methods(scene:"NDScene"):
-        def pixel_index_from_unit_viewport(data:NDData, target:NDData):
-            import torch
-            ans = data.copy()
-            verts = ans['vertices']
-            # XYZW to XY (normalize by W, drop Z)
-            ws = verts[:,-1].unsqueeze(-1)
-            xy = verts[:,0:2]
-            xy = xy / ws
-            # XY to XY1, scale to integer shape space
-            xy1 = torch.concat([xy,torch.ones_like(ws)], -1)
-            sx = target.shape[0].size
-            sy = target.shape[1].size
-            scl = [ 0.0, 0.5 * sx,
-                   0.5 * sy, 0.0,
-                   0.5 * sy, 0.5 * sx ]
-            scl = torch.tensor(scl).reshape(3,2)
-            xy = torch.mm(xy1, scl)
-            ans['vertices'] = xy
-            return ans
-        scene.ensure_method('pixel_index_from_unit_viewport').callback = pixel_index_from_unit_viewport
+        scene.ensure_method('pixel_index_from_unit_viewport', NDMethod.std_pixel_index_from_unit_viewport)
 
+    @staticmethod
+    def std_batch_index1_from_indexN(target, src_index):
+        import torch
+        indexN = src_index.shape[-1]
+        bounds = target.shape
+        pos = src_index.int()
+        pos_min = torch.zeros( [indexN], dtype=torch.int )
+        pos_max = torch.tensor( bounds[0:indexN], dtype=torch.int ) - 1
+        pos = torch.clamp(pos, min=pos_min, max=pos_max)
+        pos = pos.int()
+        stride = 1
+        for di in reversed(range(indexN)):
+            pos[:,di] = pos[:,di] * stride
+            stride = stride * bounds[di]
+        pos = torch.sum(pos, dim=-1)
+        return pos
+
+    @staticmethod
+    def std_pixel_index_from_unit_viewport(data:NDData, target:NDData):
+        import torch
+        ans = data.copy()
+        verts = ans['vertices']
+        # XYZW to XY (normalize by W, drop Z)
+        ws = verts[:,-1].unsqueeze(-1)
+        xy = verts[:,0:2]
+        xy = xy / ws
+        # XY to XY1, scale to integer shape space
+        xy1 = torch.concat([xy,torch.ones_like(ws)], -1)
+        sx = target.shape[0].size
+        sy = target.shape[1].size
+        scl = [ 0.0, 0.5 * sx,
+                0.5 * sy, 0.0,
+                0.5 * sy, 0.5 * sx ]
+        scl = torch.tensor(scl).reshape(3,2)
+        xy = torch.mm(xy1, scl)
+        ans['vertices'] = xy
+        return ans
 
 class NDScene():
     root :NDObject = None
@@ -484,11 +505,14 @@ class NDScene():
                 par = next_par
         return par_top
     
-    def ensure_method(self, path:str) -> NDMethod:
+    def ensure_method(self, path:str, callback=None) -> NDMethod:
         if (path in self.methods):
-            return self.methods[path]
-        ans = NDMethod(path)
-        self.methods[path] = ans
+            ans = self.methods[path]
+        else:
+            ans = NDMethod(path)
+            self.methods[path] = ans
+        if (callback):
+            ans.callback = callback
         return ans
     
     def add_tensor(self, path:str, tensor:NDTensor):
@@ -590,13 +614,9 @@ class NDMath:
             assert('vertices' in ans)
             verts = ans['vertices']
             import torch
-            print("verts.shape=", verts.shape)
-            print("pose.shape=", pose.shape)
             if (verts.shape[-1] == 3):
                 ones = torch.ones_like(verts[:,0]).unsqueeze(-1)
                 verts = torch.concat([verts,ones],-1)
-            print("verts.shape=", verts.shape)
-            print("pose.shape=", pose.shape)
             
             verts = torch.mm(verts, pose)
             ans['vertices'] = verts
@@ -637,8 +657,8 @@ class NDTorch:
         import torch
         shape = torch.Size( [i.size for i in NDTensor.shape] )
         ans = torch.tensor( NDTensor.data.buffer )
-        print("ans.shape=", ans.shape)
-        print("shape", shape)
+        #print("ans.shape=", ans.shape)
+        #print("shape", shape)
         assert( ans.shape == shape )
         NDTensor.data.tensor = ans
         return ans
@@ -670,7 +690,7 @@ class NDRender:
         world_depth = len(self.stack_pose)
         res = self.state_result_tensor
         
-        self.push_children_recursive(world, excluding)
+        self.apply_children_recursive(world, excluding)
         done_depth = len(self.stack_pose)
         assert(done_depth == world_depth)
         self.stack_pose.clear()
@@ -689,7 +709,7 @@ class NDRender:
             cursor = cursor.parent_any_to_world()
         return latest
     
-    def push_children_recursive(self, target:NDObject, excluding:dict[NDObject,bool]):
+    def apply_children_recursive(self, target:NDObject, excluding:dict[NDObject,bool]):
         ans = None
         stop_at_first = False
         if (target in excluding):
@@ -699,7 +719,7 @@ class NDRender:
             ans = self.apply_data(target.content)
         if (target.children and (not stop_at_first or not ans)):
             for child in target.children:
-                ans = self.push_children_recursive(child, excluding)
+                ans = self.apply_children_recursive(child, excluding)
                 if (ans and stop_at_first): break
         self.pop_pose()
         return ans
@@ -745,37 +765,29 @@ class NDRender:
     @staticmethod
     def scatterND(target, src_index, src_vals):
         import torch
-        indexN = src_index.shape[-1]
+        # target.shape = [N0,N1,...,C] | N is dimension count, C is channels
+        # src_index.shape = [M,N], M is vertex count, N is dimension count
+        # src_vals.shape = [M,C] M instances of C channels
+
+        # ensure the values are the right shape [M,channels]
         channels = target.shape[-1]
-        bounds = target.shape
-        pos = src_index.int()
-        vals_shape = list(pos.shape)
+        vals_shape = list(src_index.shape)
         vals_shape[-1] = channels
-        pos_min = torch.zeros( [indexN], dtype=torch.int )
-        pos_max = torch.tensor( bounds[0:indexN], dtype=torch.int ) - 1
-        pos = torch.clamp(pos, min=pos_min, max=pos_max)
-        pos = pos.int()
-        stride = 1
         flat_size = 1
-        for di in reversed(range(indexN)):
-            pos[:,di] = pos[:,di] * stride
-            stride = stride * bounds[di]
-        pos = torch.sum(pos, dim=-1)
-        flat_size = stride
-        target = torch.tensor(target)
+        for i in range(len(target.shape)-1):
+            flat_size *= target.shape[i]
         if (src_vals is None):
             src_vals = torch.ones( vals_shape )
             if (target.dtype == torch.uint8):
                 src_vals = src_vals * 255
                 src_vals = src_vals.byte()
-        print("Ready for scatterND:")
+        # convert indexN to index1:
+        pos = NDMethod.std_batch_index1_from_indexN(target, src_index)
         pos = pos.unsqueeze(-1).repeat([1,2]) # repeat indices for now...
-        print("pos.shape=", pos.shape)
-        print("vals.shape=", src_vals.shape)
-        print("target.shape=", target.shape)
         linear_target_shape = [ flat_size, channels ]
         flat_target = target.reshape( linear_target_shape )
-        print("flat_target.shape=", flat_target.shape)
-        flat_target.scatter_( 0, pos, src_vals ) # leave this part out
+        # the actual in-place '1D' scatter:
+        flat_target.scatter_( 0, pos, src_vals )
+        # bring back to N dimensions:
         target = flat_target.reshape( target.shape )
         return target;
