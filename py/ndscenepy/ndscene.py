@@ -48,6 +48,7 @@ class NDData():
     def save_to_path(self, new_path=None):
         if (new_path):
             self.path = new_path
+        print(f"Saving to file '{self.path}'...")
         self.write_tensor_to_path(self.tensor.numpy(), self.path)
 
     @staticmethod
@@ -428,7 +429,11 @@ class NDMethod():
             xy = xy / ws
             # XY to XY1, scale to integer shape space
             xy1 = torch.concat([xy,torch.ones_like(ws)], -1)
-            scl = [ 0.5 * target.shape[0].size, 0.0, 0.5 * target.shape[1].size, 0.0, 0.5, 0.5 ]
+            sx = target.shape[0].size
+            sy = target.shape[1].size
+            scl = [ 0.0, 0.5 * sx,
+                   0.5 * sy, 0.0,
+                   0.5 * sy, 0.5 * sx ]
             scl = torch.tensor(scl).reshape(3,2)
             xy = torch.mm(xy1, scl)
             ans['vertices'] = xy
@@ -665,7 +670,7 @@ class NDRender:
         world_depth = len(self.stack_pose)
         res = self.state_result_tensor
         
-        self.push_children_data(world, excluding)
+        self.push_children_recursive(world, excluding)
         done_depth = len(self.stack_pose)
         assert(done_depth == world_depth)
         self.stack_pose.clear()
@@ -684,16 +689,20 @@ class NDRender:
             cursor = cursor.parent_any_to_world()
         return latest
     
-    def push_children_data(self, target:NDObject, excluding:dict[NDObject,bool]):
+    def push_children_recursive(self, target:NDObject, excluding:dict[NDObject,bool]):
+        ans = None
+        stop_at_first = False
         if (target in excluding):
-            return;
+            return ans
         self.push_pose(target.pose, target.unpose)
         if (target.content is not None):
-            self.apply_data(target.content)
-        if (target.children):
+            ans = self.apply_data(target.content)
+        if (target.children and (not stop_at_first or not ans)):
             for child in target.children:
-                self.push_children_data(child, excluding)
+                ans = self.push_children_recursive(child, excluding)
+                if (ans and stop_at_first): break
         self.pop_pose()
+        return ans
 
     # Rendering API (NDTensor only):
     def set_result(self, res :NDTensor, res_tensor):
