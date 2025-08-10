@@ -624,6 +624,10 @@ class NDMath:
             return data
         if (isinstance(pose,NDMethod)):
             return pose.apply_method_to_data(data,target)
+        if (isinstance(pose,list)):
+            for step in pose:
+                data = NDMath.apply_pose_to_data(step, data, target)
+            return data
         pose_is_dict = isinstance(pose,dict)
         data_is_dict = isinstance(data,dict)
         if (data_is_dict and not pose_is_dict):
