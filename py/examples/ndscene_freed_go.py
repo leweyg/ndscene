@@ -31,6 +31,12 @@ def main_freed_go_test():
     scene = ndscene.NDJson.scene_from_path("../json/freed_go/view_3_scene.json")
     ndscene.NDMethod.setup_standard_methods(scene)
     board_size = calc_board_size_2n_from_mn(scene)
+    voxel_scene = ndscene.NDJson.scene_from_path("../json/freed_go/voxels.json")
+
+    world = scene.root.child_find("world")
+    voxels = voxel_scene.root.child_find("voxels")
+    # FIX THIS: world.child_add(voxels)
+
     test_camera = scene.root.child_find('camera', recursive=True)
     image_path = test_camera.child_find('image', recursive=True)
     image_tensor = image_path.content.ensure_tensor(scene)

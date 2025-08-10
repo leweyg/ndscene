@@ -136,12 +136,14 @@ class NDTensor():
         torchDType = torch.float
         shape = []
         data = None
+        shape_product = 1
         if ("dtype" in obj):
             pass # more of these
         if ("shape" in obj):
             for sv in obj["shape"]:
                 if (isinstance(sv,int)):
                     shape.append(sv)
+                    shape_product *= sv
                 else:
                     NDTODO()
         if ('data' in obj):
@@ -151,7 +153,14 @@ class NDTensor():
                     dv = list(dv.values())
             if (isinstance(dv,list)):
                 data = dv
-        ans = torch.tensor(data, dtype=torchDType).reshape(shape)
+        ans = torch.tensor(data, dtype=torchDType);
+        ans_el = ans.numel()
+        if (ans_el == shape_product):
+            ans = ans.reshape(shape)
+        elif (ans_el == 1):
+            ans = ans.repeat(shape_product).reshape(shape)
+        else:
+            NDTODO()
         return ans
     
     def ensure_tensor(self, scene:"NDScene"):
@@ -178,6 +187,8 @@ class NDTensor():
                 if (not method):
                     method = scene.ensure_method(obj)
                 return method
+        if (isinstance(obj,list)):
+            return [NDTensor.from_method_object(step, scene) for step in obj]
         return NDTensor.from_object(obj, scene);
 
     @staticmethod
@@ -218,6 +229,15 @@ class NDTensor():
             for k,v in obj.items():
                 dans[k]  = NDTensor.from_object(v, scene)
             return dans
+        if (isinstance(obj,list)):
+            if (len(obj)==0):
+                NDTODO() # ?
+            first = obj[0]
+            if (isinstance(obj,float)):
+                import torch
+                return torch.tensor(obj)
+            if (isinstance(obj,str)):
+                NDTODO()
         NDTODO()
 
     def shape_ensure(self):
@@ -365,15 +385,12 @@ class NDObject():
                 if (ans): return ans
         return None
 
-    def child_find(self, name, recursive=False):
-        if (self.children is None):
-            return None
-        for k in self.children:
-            if k.name == name:
-                return k
-        if recursive:
+    def child_find(self, name, recursive=False, depth=0):
+        if (self.name == name):
+            return self
+        if self.children and (recursive or depth==0):
             for k in self.children:
-                ans = k.child_find(name, recursive=recursive)
+                ans = k.child_find(name, recursive=recursive, depth=depth+1)
                 if ans: return ans
         return None
 
@@ -709,16 +726,18 @@ class NDRender:
             cursor = cursor.parent_any_to_world()
         return latest
     
-    def apply_children_recursive(self, target:NDObject, excluding:dict[NDObject,bool]):
+    def apply_children_recursive(self, cursor:NDObject, excluding:dict[NDObject,bool]):
         ans = None
         stop_at_first = False
-        if (target in excluding):
+        if (cursor in excluding):
             return ans
-        self.push_pose(target.pose, target.unpose)
-        if (target.content is not None):
-            ans = self.apply_data(target.content)
-        if (target.children and (not stop_at_first or not ans)):
-            for child in target.children:
+        if (cursor.name == "voxels"):
+            print("Found it...");
+        self.push_pose(cursor.pose, cursor.unpose)
+        if (cursor.content is not None):
+            ans = self.apply_data(cursor.content)
+        if (cursor.children and (not stop_at_first or not ans)):
+            for child in cursor.children:
                 ans = self.apply_children_recursive(child, excluding)
                 if (ans and stop_at_first): break
         self.pop_pose()

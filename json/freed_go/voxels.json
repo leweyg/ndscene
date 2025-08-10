@@ -1,0 +1,30 @@
+{
+    "root":{
+        "name": "world",
+        "children": [
+            {
+                "name":"voxels",
+                "pose":{
+                    "shape":[2,3],
+                    "data":[
+                        [-50.8504, -46.2648, -17.5000],
+                        [ 35.0000,  46.2648,  17.5000]
+                    ]
+                },
+                "children":[
+                    {
+                        "name":"voxel_data",
+                        "pose":[
+                            "unit_from_index",
+                            "unsqueeze_1_minus"
+                        ],
+                        "content":{
+                            "shape":[8,8,8],
+                            "data":[1]
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+}
