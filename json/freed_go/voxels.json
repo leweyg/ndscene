@@ -4,19 +4,25 @@
         "children": [
             {
                 "name":"voxels",
-                "pose":{
-                    "shape":[2,3],
-                    "data":[
-                        [-50.8504, -46.2648, -17.5000],
-                        [ 35.0000,  46.2648,  17.5000]
-                    ]
-                },
+                "pose":[
+                    {
+                        "shape":[4,3],
+                        "data":[
+                            [ 85.8504,   0.0000,   0.0000],
+                            [  0.0000,  92.5295,   0.0000],
+                            [  0.0000,   0.0000,  35.0000],
+                            [-50.8504, -46.2648, -17.5000]
+                        ]
+                    },
+                    "append_ones",
+                    "as_vertices"
+                ],
                 "children":[
                     {
                         "name":"voxel_data",
                         "pose":[
-                            "unit_from_index",
-                            "unsqueeze_1_minus"
+                            "unit_index_from_data",
+                            "append_ones"
                         ],
                         "content":{
                             "shape":[8,8,8],

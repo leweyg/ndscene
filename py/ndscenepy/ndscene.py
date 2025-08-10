@@ -440,6 +440,49 @@ class NDMethod():
     @staticmethod
     def setup_standard_methods(scene:"NDScene"):
         scene.ensure_method('pixel_index_from_unit_viewport', NDMethod.std_pixel_index_from_unit_viewport)
+        scene.ensure_method('unit_index_from_data', NDMethod.unit_index_from_data)
+        scene.ensure_method('append_ones', NDMethod.append_ones)
+        scene.ensure_method('as_vertices', NDMethod.as_vertices)
+
+    @staticmethod
+    def as_vertices(data, target=None):
+        return {'vertices':data}
+
+    @staticmethod
+    def append_ones(data, target=None, dim=-1):
+        import torch
+        onesShape = list(data.shape);
+        onesShape[dim] = 1;
+        ones = torch.ones(onesShape);
+        ans = torch.concat([ data, ones ], dim );
+        return ans;
+
+    @staticmethod
+    def index_nd_from_data(data):
+        import torch
+        n = data.numel()
+        d = len(data.shape)
+        ids = torch.arange(n*d)
+        ids = ids.reshape([n,d])
+        stride = d
+        for di in reversed(range(d)):
+            dsize = data.shape[di]
+            ids[:,di] = ((ids[:,di] / stride) % dsize)
+            stride *= dsize
+        #print(ids)
+        return ids
+    
+    @staticmethod
+    def unit_index_from_data(data, target):
+        index_nd = NDMethod.index_nd_from_data(data)
+        n = index_nd.shape[0]
+        d = index_nd.shape[1]
+        import torch
+        scaler = [1.0/(s-1) for s in data.shape]
+        scaler = torch.tensor(scaler)
+        ans = scaler * index_nd
+        #print(ans)
+        return ans
 
     @staticmethod
     def std_batch_index1_from_indexN(target, src_index):
@@ -642,6 +685,12 @@ class NDMath:
             verts = torch.mm(verts, pose)
             ans['vertices'] = verts
             return ans
+        pose_is_tensor = NDTorch.is_tensor(pose)
+        data_is_tensor = NDTorch.is_tensor(data)
+        if (pose_is_tensor and data_is_tensor):
+            import torch
+            ans = torch.mm( data, pose )
+            return ans
         NDTODO() # batch-matrix-multiply by default
         return pose * data
 
@@ -680,7 +729,7 @@ class NDTorch:
         ans = torch.tensor( NDTensor.data.buffer )
         #print("ans.shape=", ans.shape)
         #print("shape", shape)
-        assert( ans.shape == shape )
+        #assert( ans.shape == shape )
         NDTensor.data.tensor = ans
         return ans
 
