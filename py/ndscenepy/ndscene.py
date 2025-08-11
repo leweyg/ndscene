@@ -539,7 +539,6 @@ class NDScene():
         ans = NDScene()
         ans.__dict__.update(obj)
         ans.path_root = path_dir
-        nv = {}
         for k,v in ans.tensors.items():
             ans.tensors[k] = NDTensor.from_object(v, ans)
         for k,v in ans.objects.items():
@@ -739,6 +738,45 @@ class NDRender:
     stack_pose   :list[NDTensor] = None
     scene :NDScene = None
 
+    # Rendering API (NDTensor only):
+    def set_result(self, res :NDTensor, res_tensor):
+        self.state_result = NDJson.ensure_tensor(res)
+        self.state_result_tensor = res_tensor
+        
+    def push_pose(self, pose: NDTensor, unpose :NDTensor):
+        """pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored."""
+        if (pose is not None):
+            self.stack_pose.append(pose)
+            return
+        if (unpose is not None):
+            self.stack_pose.append(NDMath.inverse_pose(unpose))
+            return;
+        self.stack_pose.append(None)
+
+    def apply_data(self, data :NDTensor):
+        """concatenates the data to existing input data given the current transform stack."""
+        ans = data
+        for p in reversed(self.stack_pose):
+            ans = NDMath.apply_pose_to_data(p, ans, self.state_result)
+        if (self.state_result):
+            dst = self.state_result_tensor
+            dst = NDRender.scatterND(dst, ans['vertices'], ans.get('color'))
+            self.state_result_tensor = dst
+            self.state_result.data.tensor = dst
+            return self.state_result
+        return ans
+
+    def pop_pose(self):
+        n = len(self.stack_pose)
+        if (n <= 0):
+            raise "Can't call 'pop_pose' on an empty pose stack."
+        self.stack_pose.pop()
+
+    def get_result(self) -> NDTensor:
+        """returns the data transformed by the poses"""
+        return self.state_result
+    
+
     def __init__(self):
         self.stack_pose = []
 
@@ -796,44 +834,6 @@ class NDRender:
         self.pop_pose()
         return ans
 
-    # Rendering API (NDTensor only):
-    def set_result(self, res :NDTensor, res_tensor):
-        self.state_result = NDJson.ensure_tensor(res)
-        self.state_result_tensor = res_tensor
-        
-    def push_pose(self, pose: NDTensor, unpose :NDTensor):
-        """pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored."""
-        if (pose is not None):
-            self.stack_pose.append(pose)
-            return
-        if (unpose is not None):
-            self.stack_pose.append(NDMath.inverse_pose(unpose))
-            return;
-        self.stack_pose.append(None)
-
-    def apply_data(self, data :NDTensor):
-        """concatenates the data to existing input data given the current transform stack."""
-        ans = data
-        for p in reversed(self.stack_pose):
-            ans = NDMath.apply_pose_to_data(p, ans, self.state_result)
-        if (self.state_result):
-            dst = self.state_result_tensor
-            dst = NDRender.scatterND(dst, ans['vertices'], ans.get('color'))
-            self.state_result_tensor = dst
-            self.state_result.data.tensor = dst
-            return self.state_result
-        return ans
-
-    def pop_pose(self):
-        n = len(self.stack_pose)
-        if (n <= 0):
-            raise "Can't call 'pop_pose' on an empty pose stack."
-        self.stack_pose.pop()
-
-    def get_result(self) -> NDTensor:
-        """returns the data transformed by the poses"""
-        return self.state_result
-    
     @staticmethod
     def scatterND(target, src_index, src_vals):
         import torch

@@ -25,7 +25,7 @@
                             "append_ones"
                         ],
                         "content":{
-                            "shape":[8,8,8],
+                            "shape":[16,16,16],
                             "data":[1]
                         }
                     }

@@ -43,28 +43,38 @@ def calc_board_size_2n_from_mn(scene):
 
 def main_freed_go_test():
     print("Main Freed Go test...")
-    scene = ndscene.NDJson.scene_from_path("../json/freed_go/view_2_scene.json")
-    ndscene.NDMethod.setup_standard_methods(scene)
-    board_size = calc_board_size_2n_from_mn(scene)
     voxel_scene = ndscene.NDJson.scene_from_path("../json/freed_go/voxels.json")
-
-    world = scene.root.child_find("world")
     voxels = voxel_scene.root.child_find("voxels")
-    world.child_add(voxels) # adds the voxels to the main scene
+    assert(voxels)
 
-    test_camera = scene.root.child_find('camera', recursive=True)
-    image_path = test_camera.child_find('image', recursive=True)
-    image_tensor = image_path.content.ensure_tensor(scene)
-    print("image_tensor.shape=", image_tensor.shape)
-    # reset all (except alpha) to zero/black:
-    #image_tensor[:,:,0:3].fill_(0)
-    #print("test_camera:", test_camera)
-    # rendering tests:
-    renderer = ndscene.NDRender()
-    renderer.update_object_from_world(image_path, scene)
-    #print("Scene=", scene)
-    image_path.content.data.save_to_path("test_output.png")
-    pass;
+    input_views = [
+        "../json/freed_go/view_1_scene.json",
+        "../json/freed_go/view_2_scene.json",
+        "../json/freed_go/view_3_scene.json",
+    ]
+    for view_path in input_views:
+        scene = ndscene.NDJson.scene_from_path(view_path)
+        ndscene.NDMethod.setup_standard_methods(scene)
+        board_size = calc_board_size_2n_from_mn(scene)
+
+        world = scene.root.child_find("world")
+        
+        world.child_add(voxels) # adds the voxels to the main scene
+
+        test_camera = scene.root.child_find('camera', recursive=True)
+        image_path = test_camera.child_find('image', recursive=True)
+        image_tensor = image_path.content.ensure_tensor(scene)
+        print("image_tensor.shape=", image_tensor.shape)
+        # reset all (except alpha) to zero/black:
+        #image_tensor[:,:,0:3].fill_(0)
+        #print("test_camera:", test_camera)
+        # rendering tests:
+        renderer = ndscene.NDRender()
+        renderer.update_object_from_world(image_path, scene)
+        #print("Scene=", scene)
+        image_path.content.data.path += ".out.png"
+        image_path.content.data.save_to_path()
+        pass;
 
 
 if __name__ == "__main__":
