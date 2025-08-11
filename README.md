@@ -1,13 +1,13 @@
 
-# NDScene: NDObject, NDTensor and NDRender
-n-dimensional scene-graph runtime and format; allowing AI vision models to be expressed as the updating of an tensor-asset within a posed scene-graph; such as a virtual camera or tile within a field of known camera views. Dictionaries of tensors are used throughout to provide flexability and named multi-dimensionality when needed.
+# NDRender and NDScene (ndscene)
+n-dimensional scene-graph runtime and format; allowing AI vision models to be expressed as the updating of an tensor-asset within a posed scene-graph. Such as a virtual camera or tile within a field of known camera views. Dictionaries of tensors are used throughout to provide flexability and named multi-dimensionality in addition to dense tensor formats.
 
 ## Abstract / Architectural Principals
 
-1. Render Kernel (NDRender): ndBegin(target,per_input=true), ndPush(pose,unpose), ndApply(data), ndPop(), ndEnd(). Defined as: target=concat(pose(data)) per-input-style-rasterization or unpose(target) = pose(data) per-output-style-ray-tracing.
-2. Tensors (target/transform/data, NDTensor) can be nestable dictionaries/lists of native-tensors or named methods/modules/dimensions.
+1. Render Kernel (NDRender): ndBegin(target,per_input=true), ndPush(pose,unpose), ndConcat(data), ndPop(), ndEnd(). Defined as: `unpose(target) = concat(pose(data))`.
+2. Tensors (target/transform/data, NDTensor) can be nestable dictionaries/lists of native-tensors or named methods/modules/dimensions. Namely 'shape' is defined as a list-of-recursive-tensors each having a size, rather than a list of integers (see schema below).
 3. Pose/Unpose (NDTensor) is used to pose data into it's parent space, or unpose it back into it's child/data space. I.e. you can transform filtered dictionaries of tensors using matrix multiplication (default), listed sequences of steps, or with an extensible set of standard transforms (append_ones, projection, index_to_). Inversion/"unpose" is used to support optimization and target relative transforms such as viewport encoding.
-3. Scene graphs (NDScene) simplify expression of render commands, allow asset instancing, and maintain JSON schema conversions. Rendering is expressed as updates of specific tensors within a scene graph, such as virtual camera image synthesis.
+3. Scene graphs (NDScene) simplifies expression of render commands, allowing asset instancing, and maintain JSON schema conversions. Rendering is expressed as updates of specific tensors within a scene graph, such as virtual camera image synthesis.
 4. Data/media (NDData) behind tensors can be progressivly transitioned between native-tensored, buffered, mime-compressed and remote-pathed states. Allowing natural integration of standard image, video, zip and other compression schemes.
 5. Streaming is achieved via scene patches/updates, including scenes which are themselves queries for additional content, and which generally leverage a secondary path-based file/shared-memory system for same-device or cacheable content.
 6. "Hardware Acceleration" (NDTorch) is achieved via PyTorch which is required for rendering (with CPU fallback), but optional for basic scene-graph file-IO.
@@ -69,17 +69,17 @@ class NDRender:
     stack_pose   :list[NDTensor] = None
     stack_values :list[NDTensor] = None
 
+    # Core API (NDTensor only):
+    ndBegin(to :NDTensor, per_input=True): pass # set the destination tensor, and uses update semantics if provided. Returns new result if result is None
+    ngPush(pose: NDTensor, unpose :NDTensor): pass # pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored.
+    ndConcat(data :NDTensor): pass # concatenates the data to existing input data given the current transform stack.
+    pop_pose(): pass # pop the transform
+    get_result() -> NDTensor: pass # returns the data transformed by the poses
+
     # NDTensor/JSON conversions:
     ensure_tensor(obj) -> NDTensor: pass # given a tensor or JSON result, ensure that the object is NDTensor configured.
     ensure_data(obj) -> NDData: pass # given an JSON result, return a typed NDData wrapper if it isn't already.
-    json_object(data:NDTensor|NDData) -> dict: pass # given a tensor return a JSON-stringify-able result.
-
-    # Core API (NDTensor only):
-    set_result(to :NDTensor): pass # set the destination tensor, and uses update semantics if provided. Returns new result if result is None
-    push_pose(pose: NDTensor, unpose :NDTensor): pass # pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored.
-    apply_data(data :NDTensor): pass # concatenates the data to existing input data given the current transform stack.
-    pop_pose(): pass # pop the transform
-    get_result() -> NDTensor: pass # returns the data transformed by the poses
+    json_from(data:NDTensor|NDData) -> dict: pass # given a tensor return a JSON-stringify-able result.
 
     # NDObject Extensions:
     apply_children( obj :NDObject ): pass # walks the children calling pushPose/applyData/popPose as appropriate.
