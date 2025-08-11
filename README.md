@@ -4,8 +4,8 @@ n-dimensional scene-graph runtime and format; allowing AI vision models to be ex
 
 ## Abstract / Architectural Principals
 
-1. Render Kernel (NDRender): ndBegin(target,per_input=true), ndPush(pose,unpose), ndConcat(data), ndPop(), ndEnd(). Defined as: `unpose(target) = concat(pose(data))`.
-2. Tensors (target/transform/data, NDTensor) can be nestable dictionaries/lists of native-tensors or named methods/modules/dimensions. Namely 'shape' is defined as a list-of-recursive-tensors each having a size, rather than a list of integers (see schema below).
+1. Render Kernel (NDRender): ndBegin(target,per_input=true), ndPush(pose,unpose), ndConcat(data), ndPop(), ndEnd(). Defined as: `unpose(target) = concat[pose(data),...]`.
+2. Tensors (target/transform/data) can be nestable dictionaries/lists of native/parameterized/autograd tensors or named methods/modules/dimensions (NDTensor|dict|list|torch.tensor).
 3. Pose/Unpose (NDTensor) is used to pose data into it's parent space, or unpose it back into it's child/data space. I.e. you can transform filtered dictionaries of tensors using matrix multiplication (default), listed sequences of steps, or with an extensible set of standard transforms (append_ones, projection, index_to_). Inversion/"unpose" is used to support optimization and target relative transforms such as viewport encoding.
 3. Scene graphs (NDScene) simplifies expression of render commands, allowing asset instancing, and maintain JSON schema conversions. Rendering is expressed as updates of specific tensors within a scene graph, such as virtual camera image synthesis.
 4. Data/media (NDData) behind tensors can be progressivly transitioned between native-tensored, buffered, mime-compressed and remote-pathed states. Allowing natural integration of standard image, video, zip and other compression schemes.
@@ -40,12 +40,8 @@ In brief: scenes contain objects which contain dictionaries of tensor-shaped dat
                 
                 "@type" : "NDData |array|bytes|string", // linear data representation
                 "tensor" : ["number|string|numpy|pytorch"],
+                "compressed_type" : "string_mime_type|string_dtype",
                 "buffer" : "bytes",
-                "buffer_size": "int", // size uncompressed
-                "buffer_dtype": "string_dtype",
-                "compressed" : "bytes",
-                "compressed_type" : "string_mime_type",
-                "compressed_size" : "int", 
                 "path" : "string", // external path
             }
         }
