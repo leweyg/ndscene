@@ -739,11 +739,11 @@ class NDRender:
     scene :NDScene = None
 
     # Rendering API (NDTensor only):
-    def set_result(self, res :NDTensor, res_tensor):
+    def ndBegin(self, res :NDTensor, res_tensor):
         self.state_result = NDJson.ensure_tensor(res)
         self.state_result_tensor = res_tensor
         
-    def push_pose(self, pose: NDTensor, unpose :NDTensor):
+    def ndPush(self, pose: NDTensor, unpose :NDTensor):
         """pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored."""
         if (pose is not None):
             self.stack_pose.append(pose)
@@ -753,7 +753,7 @@ class NDRender:
             return;
         self.stack_pose.append(None)
 
-    def apply_data(self, data :NDTensor):
+    def ndConcat(self, data :NDTensor):
         """concatenates the data to existing input data given the current transform stack."""
         ans = data
         for p in reversed(self.stack_pose):
@@ -766,13 +766,13 @@ class NDRender:
             return self.state_result
         return ans
 
-    def pop_pose(self):
+    def ndPop(self):
         n = len(self.stack_pose)
         if (n <= 0):
-            raise "Can't call 'pop_pose' on an empty pose stack."
+            raise "Can't call 'ndPop' on an empty pose stack."
         self.stack_pose.pop()
 
-    def get_result(self) -> NDTensor:
+    def ndEnd(self) -> NDTensor:
         """returns the data transformed by the poses"""
         return self.state_result
     
@@ -793,14 +793,19 @@ class NDRender:
 
         excluding = {}
         excluding[target] = True
-        self.set_result(target.content, target.content.ensure_tensor(scene))
+        self.ndBegin(target.content, target.content.ensure_tensor(scene))
         world = self.push_scene_back_to_world(target)
         world_depth = len(self.stack_pose)
         res = self.state_result_tensor
         
-        self.apply_children_recursive(world, excluding)
+        # main loop
+        self.concat_children_recursive(world, excluding)
+
         done_depth = len(self.stack_pose)
         assert(done_depth == world_depth)
+
+        res = self.ndEnd()
+
         self.stack_pose.clear()
         self.state_result = None
         self.state_result_tensor = None
@@ -813,25 +818,25 @@ class NDRender:
         while (cursor):
             # first push inverses back to world:
             latest = cursor
-            self.push_pose(cursor.unpose, cursor.pose)
+            self.ndPush(cursor.unpose, cursor.pose)
             cursor = cursor.parent_any_to_world()
         return latest
     
-    def apply_children_recursive(self, cursor:NDObject, excluding:dict[NDObject,bool]):
+    def concat_children_recursive(self, cursor:NDObject, excluding:dict[NDObject,bool]):
         ans = None
         stop_at_first = False
         if (cursor in excluding):
             return ans
         if (cursor.name == "voxels"):
             print("Found it...");
-        self.push_pose(cursor.pose, cursor.unpose)
+        self.ndPush(cursor.pose, cursor.unpose)
         if (cursor.content is not None):
-            ans = self.apply_data(cursor.content)
+            ans = self.ndConcat(cursor.content)
         if (cursor.children and (not stop_at_first or not ans)):
             for child in cursor.children:
-                ans = self.apply_children_recursive(child, excluding)
+                ans = self.concat_children_recursive(child, excluding)
                 if (ans and stop_at_first): break
-        self.pop_pose()
+        self.ndPop()
         return ans
 
     @staticmethod

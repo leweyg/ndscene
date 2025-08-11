@@ -69,8 +69,8 @@ class NDRender:
     ndBegin(to :NDTensor, per_input=True): pass # set the destination tensor, and uses update semantics if provided. Returns new result if result is None
     ngPush(pose: NDTensor, unpose :NDTensor): pass # pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored.
     ndConcat(data :NDTensor): pass # concatenates the data to existing input data given the current transform stack.
-    pop_pose(): pass # pop the transform
-    get_result() -> NDTensor: pass # returns the data transformed by the poses
+    ndPop(): pass # pop the transform
+    ndEnd() -> NDTensor: pass # returns the data transformed by the poses
 
     # NDTensor/JSON conversions:
     ensure_tensor(obj) -> NDTensor: pass # given a tensor or JSON result, ensure that the object is NDTensor configured.
