@@ -1,17 +1,16 @@
 
 # NDScene: NDObject, NDTensor and NDRender
-n-dimensional scene-graph format and runtime
+n-dimensional scene-graph runtime and format; allowing AI vision models to be expressed as the updating of an tensor-asset within a posed scene-graph; such as a virtual camera or tile within a field of known camera views. Dictionaries of tensors are used throughout to provide flexability and named multi-dimensionality when needed.
 
 ## Abstract / Architectural Principals
 
-1. "Tensors" (NDTensor) should be recursivly nestable, i.e. tensors can be dictionaries of tensors. In this way most structured data is already considered to be in tensor format.
-2. "Objects" (NDObject) are posed/transformed sparse tensors, equivalent to the concatenation of their tranformed children, including support for parallel dictionaries of tensors. This combines the flexibility of scene composition with the effeciency of dense/repeated tensors.
-3. "Data" (NDData) behind tensors can be progressivly transitioned between tensored, buffered, mime-compressed and remote-pathed states. Allowing natural integration of standard image, video, zip and other compression schemes.
-3. "Scenes" (NDScene) are collections of objects including support of reuse/sharing of Objects, Tensors and Data; which is useful in instancing and other techniques.
-3. "Poses/Transforms" (PoseND) also being tensors default to being batch-matrix-multiply transforms along each parallel dictionary dimension, but can be replaced by reference to externally defined non-recurive-tensor "models".
-4. "Rendering" (NDRender) is the process of walking a posed tree of concatented objects, and differentiably unposing their result back into an updated target objects state. Caching is handled either automatically or by careful walking/updating of the scene tree.
-5. "Streaming" (StreamND) is achieved via scene patches/updates, including scenes which are themselves queries for additional content, and which generally leverage a secondary path-based file/shared-memory system for same-device or cacheable content.
-6. "Hardware Acceleration" (NDTorch/etc.) should be optional and lazily imported to not cause delays/breaks where it's not used.
+1. Render Kernel (NDRender): ndBegin(target,per_input=true), ndPush(pose,unpose), ndApply(data), ndPop(), ndEnd(). Defined as: target=concat(pose(data)) per-input-style-rasterization or unpose(target) = pose(data) per-output-style-ray-tracing.
+2. Tensors (target/transform/data, NDTensor) can be nestable dictionaries/lists of native-tensors or named methods/modules/dimensions.
+3. Pose/Unpose (NDTensor) is used to pose data into it's parent space, or unpose it back into it's child/data space. I.e. you can transform filtered dictionaries of tensors using matrix multiplication (default), listed sequences of steps, or with an extensible set of standard transforms (append_ones, projection, index_to_). Inversion/"unpose" is used to support optimization and target relative transforms such as viewport encoding.
+3. Scene graphs (NDScene) simplify expression of render commands, allow asset instancing, and maintain JSON schema conversions. Rendering is expressed as updates of specific tensors within a scene graph, such as virtual camera image synthesis.
+4. Data/media (NDData) behind tensors can be progressivly transitioned between native-tensored, buffered, mime-compressed and remote-pathed states. Allowing natural integration of standard image, video, zip and other compression schemes.
+5. Streaming is achieved via scene patches/updates, including scenes which are themselves queries for additional content, and which generally leverage a secondary path-based file/shared-memory system for same-device or cacheable content.
+6. "Hardware Acceleration" (NDTorch) is achieved via PyTorch which is required for rendering (with CPU fallback), but optional for basic scene-graph file-IO.
 
 ## JSON Schema
 
