@@ -6,6 +6,9 @@ def NDTODO(desc=""):
     print("NDTODO:", desc)
     raise Exception("NDTODO:" + desc)
 
+def NDTODO_IF(test, desc=""):
+    if test: NDTODO("NDTODO_IF failed:", desc)
+
 """Data is used to load and store tensors, converting between remote 'path',
 to local 'buffer' and via 'format' (dtype or MIME) to 'tensor' on demand."""
 class NDData():
@@ -164,9 +167,12 @@ class NDTensor():
         return ans
     
     def native_tensor(self, scene:"NDScene"):
-        if (self.data and self.data.tensor is not None):
-            return self.data.tensor
-        if (self.data):
+        if (self.data is not None):
+            if (NDTorch.is_tensor(self.data)):
+                return self.data
+            if (self.data.tensor is not None):
+                return self.data.tensor
+        if (self.data is not None):
             tensor = self.data.native_tensor(scene)
             if (not self.shape):
                 self.shape = [NDTensor(size=si) for si in tensor.shape]
@@ -424,18 +430,33 @@ class NDObject():
 class NDMethod():
     name :str = None
     callback = None
+    inverse_of = None
     
-    def __init__(self, name:str):
+    def __init__(self,name=None):
         self.name = name
+        self.callback = NDMethod.passthrough
+        self.method_is_inverse = False
         pass
 
-    def apply_method_to_data(self, data:NDData, target:NDData):
+    @staticmethod
+    def inverse_of_method(other : "NDMethod"):
+        assert(other is not None)
+        ans = NDMethod()
+        ans.inverse_of = other
+        return ans
+
+    def apply_method_to_data(self, data:NDData, state:"NDRender",is_inverse:bool):
         if (not self.callback):
             msg = "Need to associate a callback for '" + self.name + "'."
             print(msg)
             NDTODO(msg)
-        return self.callback(data, target)
-    
+        if (self.inverse_of is not None):
+            return self.inverse_of.apply_method_to_data(data, state, not is_inverse)
+        return self.callback(data, state, is_inverse)
+
+    @staticmethod
+    def passthrough(data:NDData, state:"NDRender",is_inverse:bool):
+        return data
 
     @staticmethod
     def setup_standard_methods(scene:"NDScene"):
@@ -445,11 +466,16 @@ class NDMethod():
         scene.ensure_method('as_vertices', NDMethod.as_vertices)
 
     @staticmethod
-    def as_vertices(data, target=None):
+    def as_vertices(data, state, is_inverse:bool):
+        if (is_inverse):
+            return data['vertices']
         return {'vertices':data}
 
     @staticmethod
-    def append_ones(data, target=None, dim=-1):
+    def append_ones(data, state, is_inverse, dim=-1):
+        if (is_inverse):
+            c = data.shape[-1]
+            return data[:,0:(c-1)]
         import torch
         onesShape = list(data.shape);
         onesShape[dim] = 1;
@@ -473,7 +499,7 @@ class NDMethod():
         return ids
     
     @staticmethod
-    def unit_index_from_data(data, target):
+    def unit_index_from_data(data, state, is_inverse):
         index_nd = NDMethod.index_nd_from_data(data)
         n = index_nd.shape[0]
         d = index_nd.shape[1]
@@ -502,7 +528,8 @@ class NDMethod():
         return pos
 
     @staticmethod
-    def std_pixel_index_from_unit_viewport(data:NDData, target:NDData):
+    def std_pixel_index_from_unit_viewport(data:NDData, state:"NDRender", is_inverse):
+        NDTODO_IF(is_inverse)
         import torch
         ans = data.copy()
         verts = ans['vertices']
@@ -512,6 +539,7 @@ class NDMethod():
         xy = xy / ws
         # XY to XY1, scale to integer shape space
         xy1 = torch.concat([xy,torch.ones_like(ws)], -1)
+        target = state.target_peek()
         sx = target.shape[0].size
         sy = target.shape[1].size
         scl = [ 0.0, 0.5 * sx,
@@ -614,6 +642,8 @@ class NDJson:
     def native_tensor(obj)->NDTensor:
         if (isinstance(obj, NDTensor)):
             return obj
+        if (NDTorch.is_tensor(obj)):
+            return obj;
         if (isinstance(obj, str)):
             ans = NDTensor()
             ans.data = NDJson.ensure_data(obj)
@@ -662,19 +692,24 @@ class NDJson:
 class NDMath:
     @staticmethod
     def inverse_pose(pose:NDTensor):
+        if (isinstance(pose,NDMethod)):
+            return NDMethod.inverse_of_method(pose)
+        if (isinstance(pose,list)):
+            unpose_seq = [NDMath.inverse_pose(p) for p in reversed(pose)]
+            return list(unpose_seq)
         import torch
         pose = NDTorch.native_tensor(pose)
         pose = torch.linalg.inv(pose)
         return pose;
     @staticmethod
-    def apply_pose_to_data(pose:NDTensor, data:NDTensor, target:NDTensor):
+    def apply_pose_to_data(pose:NDTensor, data:NDTensor, state:"NDRender"):
         if (pose is None):
             return data
         if (isinstance(pose,NDMethod)):
-            return pose.apply_method_to_data(data,target)
+            return pose.apply_method_to_data(data,state,is_inverse=False)
         if (isinstance(pose,list)):
             for step in pose:
-                data = NDMath.apply_pose_to_data(step, data, target)
+                data = NDMath.apply_pose_to_data(step, data, state)
             return data
         pose_is_dict = isinstance(pose,dict)
         data_is_dict = isinstance(data,dict)
@@ -755,7 +790,8 @@ class NDRender:
             self.stack_pose.append(pose)
             return
         if (unpose is not None):
-            self.stack_pose.append(NDMath.inverse_pose(unpose))
+            inv = NDMath.inverse_pose(unpose)
+            self.stack_pose.append(inv)
             return;
         self.stack_pose.append(None)
 
@@ -763,7 +799,7 @@ class NDRender:
         """concatenates the data to existing input data given the current transform stack."""
         ans = data
         for p in reversed(self.stack_pose):
-            ans = NDMath.apply_pose_to_data(p, ans, self.state_result)
+            ans = NDMath.apply_pose_to_data(p, ans, self)
         if (self.state_result):
             dst = self.scene.native_tensor( self.state_result_tensor )
             dst = NDRender.scatterND(dst, ans['vertices'], ans.get('color'))
@@ -782,6 +818,8 @@ class NDRender:
         """returns the data transformed by the poses"""
         return self.state_result
     
+    def target_peek(self):
+        return self.state_result
 
     def __init__(self):
         self.stack_pose = []

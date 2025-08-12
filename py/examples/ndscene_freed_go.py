@@ -16,7 +16,7 @@ def bounds_2n_from_mn(vals):
     low = vals.min(dim=0).values.unsqueeze(0)
     high = vals.max(dim=0).values.unsqueeze(0)
     bounds = torch.concat([low,high],dim=0)
-    print(bounds)
+    #print(bounds)
     return bounds
 
 def unit_to_bounds_from_bounds_2n(bounds):
@@ -28,8 +28,8 @@ def unit_to_bounds_from_bounds_2n(bounds):
     for di in range(n):
         ans[di,di] = high[di] - low[di]
         ans[n,di] = low[di]
-    print(ans)
-    print("BoundsPose=", ans.shape, "\n = ", ans)
+    #print(ans)
+    #print("BoundsPose=", ans.shape, "\n = ", ans)
     return ans
 
 def calc_board_size_2n_from_mn(scene):
@@ -65,7 +65,7 @@ def main_freed_go_test():
         test_camera = scene.root.child_find('camera', recursive=True)
         image_path = test_camera.child_find('image', recursive=True)
         image_tensor = image_path.content.native_tensor(scene)
-        print("image_tensor.shape=", image_tensor.shape)
+        #print("image_tensor.shape=", image_tensor.shape)
         # reset all (except alpha) to zero/black:
         
         #print("test_camera:", test_camera)
