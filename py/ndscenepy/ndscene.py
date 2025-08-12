@@ -10,7 +10,7 @@ def NDTODO(desc=""):
 to local 'buffer' and via 'format' (dtype or MIME) to 'tensor' on demand."""
 class NDData():
     tensor = None
-    """Native tensor-representation, consider 'ensure_tensor()' to access """
+    """Native tensor-representation, consider 'native_tensor()' to access """
     format = None # MIME type or dtype
     """dtype or MIME type"""
     buffer = None
@@ -29,7 +29,7 @@ class NDData():
             self.tensor = tensor
         pass
 
-    def ensure_tensor(self, scene:"NDScene"):
+    def native_tensor(self, scene:"NDScene"):
         if (self.tensor):
             return self.tensor
         if (self.buffer):
@@ -163,11 +163,11 @@ class NDTensor():
             NDTODO()
         return ans
     
-    def ensure_tensor(self, scene:"NDScene"):
+    def native_tensor(self, scene:"NDScene"):
         if (self.data and self.data.tensor is not None):
             return self.data.tensor
         if (self.data):
-            tensor = self.data.ensure_tensor(scene)
+            tensor = self.data.native_tensor(scene)
             if (not self.shape):
                 self.shape = [NDTensor(size=si) for si in tensor.shape]
             return tensor
@@ -550,6 +550,12 @@ class NDScene():
     def from_file_path(self, path:str):
         return NDJson.scene_from_path(path)
     
+    def native_tensor(self, obj):
+        if (isinstance(obj,NDTensor)):
+            return obj.native_tensor(self)
+        scene = self
+        return NDTensor.ensure_is_tensor(obj,scene).native_tensor(scene)
+    
     def ensure_parents(self, obj:NDObject):
         if (obj.parent_any()):
             return
@@ -605,7 +611,7 @@ class NDScene():
 class NDJson:
     # JSON read/write (static methods):
     @staticmethod
-    def ensure_tensor(obj)->NDTensor:
+    def native_tensor(obj)->NDTensor:
         if (isinstance(obj, NDTensor)):
             return obj
         if (isinstance(obj, str)):
@@ -657,7 +663,7 @@ class NDMath:
     @staticmethod
     def inverse_pose(pose:NDTensor):
         import torch
-        pose = NDTorch.ensure_tensor(pose)
+        pose = NDTorch.native_tensor(pose)
         pose = torch.linalg.inv(pose)
         return pose;
     @staticmethod
@@ -708,11 +714,11 @@ class NDTorch:
         import torch
         return torch.is_tensor(obj)
     @staticmethod
-    def ensure_tensor(obj):
+    def native_tensor(obj):
         import numpy
         import torch
         if (isinstance(obj, NDTensor)):
-            obj = obj.ensure_tensor()
+            obj = obj.native_tensor()
         if (torch.is_tensor(obj)):
             return obj
         if (isinstance(obj,numpy.ndarray)):
@@ -740,7 +746,7 @@ class NDRender:
 
     # Rendering API (NDTensor only):
     def ndBegin(self, res :NDTensor, res_tensor):
-        self.state_result = NDJson.ensure_tensor(res)
+        self.state_result = NDJson.native_tensor(res)
         self.state_result_tensor = res_tensor
         
     def ndPush(self, pose: NDTensor, unpose :NDTensor):
@@ -759,7 +765,7 @@ class NDRender:
         for p in reversed(self.stack_pose):
             ans = NDMath.apply_pose_to_data(p, ans, self.state_result)
         if (self.state_result):
-            dst = self.state_result_tensor
+            dst = self.scene.native_tensor( self.state_result_tensor )
             dst = NDRender.scatterND(dst, ans['vertices'], ans.get('color'))
             self.state_result_tensor = dst
             self.state_result.data.tensor = dst
@@ -782,18 +788,22 @@ class NDRender:
 
     # Scene API (NDScene level):
     def update_object_from_world(self, target:NDObject, scene:NDScene):
+        if(target.content is None):
+            print("Target must be a content node:", target.content)
+            assert(False)
         assert(self.state_result is None)
         assert(self.scene is None)
         assert(len(self.stack_pose) == 0)
         assert(scene)
-        assert(target.content is not None)
+        
         self.scene = scene
 
         self.scene.ensure_parents(target)
 
         excluding = {}
         excluding[target] = True
-        self.ndBegin(target.content, target.content.ensure_tensor(scene))
+        target_tensor = NDTensor.native_tensor(target.content, scene)
+        self.ndBegin(target.content, target_tensor)
         world = self.push_scene_back_to_world(target)
         world_depth = len(self.stack_pose)
         res = self.state_result_tensor

@@ -73,7 +73,7 @@ class NDRender:
     ndEnd() -> NDTensor: pass # returns the data transformed by the poses
 
     # NDTensor/JSON conversions:
-    ensure_tensor(obj) -> NDTensor: pass # given a tensor or JSON result, ensure that the object is NDTensor configured.
+    native_tensor(obj) -> NDTensor: pass # given a tensor or JSON result, ensure that the object is NDTensor configured.
     ensure_data(obj) -> NDData: pass # given an JSON result, return a typed NDData wrapper if it isn't already.
     json_from(data:NDTensor|NDData) -> dict: pass # given a tensor return a JSON-stringify-able result.
 

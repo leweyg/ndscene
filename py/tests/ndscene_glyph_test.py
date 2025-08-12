@@ -77,7 +77,7 @@ def scene_of_text():
     text_tensor = ndscene.NDTensor.from_data(text_data)
     text_node = ndscene.NDObject(content=text_tensor, scene=scene)
     scene.add_tensor("text_data", text_tensor)
-    text_tensor = text_data.ensure_tensor(scene)
+    text_tensor = text_data.native_tensor(scene)
     print("text.shape=", text_tensor.shape)
 
     layout_data = layout_text(text_tensor)

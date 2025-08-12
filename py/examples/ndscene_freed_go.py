@@ -44,7 +44,8 @@ def calc_board_size_2n_from_mn(scene):
 def main_freed_go_test():
     print("Main Freed Go test...")
     voxel_scene = ndscene.NDJson.scene_from_path("../json/freed_go/voxels.json")
-    voxels = voxel_scene.root.child_find("voxels")
+    voxels = voxel_scene.root.child_find('voxels')
+    voxel_data = voxels.child_find('voxel_data')
     assert(voxels)
 
     input_views = [
@@ -63,14 +64,21 @@ def main_freed_go_test():
 
         test_camera = scene.root.child_find('camera', recursive=True)
         image_path = test_camera.child_find('image', recursive=True)
-        image_tensor = image_path.content.ensure_tensor(scene)
+        image_tensor = image_path.content.native_tensor(scene)
         print("image_tensor.shape=", image_tensor.shape)
         # reset all (except alpha) to zero/black:
-        #image_tensor[:,:,0:3].fill_(0)
+        
         #print("test_camera:", test_camera)
         # rendering tests:
         renderer = ndscene.NDRender()
+
+        # 1. first sample the image into the voxels:
+        #renderer.update_object_from_world(voxel_data, scene)
+
+        # 2. draw the voxels to the world:
+        #image_tensor[:,:,0:3].fill_(0)
         renderer.update_object_from_world(image_path, scene)
+        
         #print("Scene=", scene)
         image_path.content.data.path += ".out.png"
         image_path.content.data.save_to_path()

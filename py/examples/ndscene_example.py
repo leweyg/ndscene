@@ -10,7 +10,7 @@ print("Defining...")
 
 def text_layout_example():
     text = "run layout\ntest on this."
-    text_tensor = ndscene.NDJson.ensure_tensor(text)
+    text_tensor = ndscene.NDJson.native_tensor(text)
 
 def main_example():
     print("ndscene_example starting:")
