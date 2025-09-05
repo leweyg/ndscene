@@ -4,13 +4,24 @@ n-dimensional scene-graph runtime and format; allowing AI vision models to be ex
 
 ## Abstract / Architectural Principals
 
-1. Render Kernel (NDRender): ndBegin(target,per_input=true), ndPush(pose,unpose), ndConcat(data), ndPop(), ndEnd(). Defined as: `unpose(target) = concat[pose(data),...]`.
-2. Tensors (target/transform/data) can be nestable dictionaries/lists of native/parameterized/autograd tensors or named methods/modules/dimensions (NDTensor|dict|list|torch.tensor).
-3. Pose/Unpose (NDTensor) is used to pose data into it's parent space, or unpose it back into it's child/data space. I.e. you can transform filtered dictionaries of tensors using matrix multiplication (default), listed sequences of steps, or with an extensible set of standard transforms (append_ones, projection, index_to_). Inversion/"unpose" is used to support optimization and target relative transforms such as viewport encoding.
-3. Scene graphs (NDScene) simplifies expression of render commands, allowing asset instancing, and maintain JSON schema conversions. Rendering is expressed as updates of specific tensors within a scene graph, such as virtual camera image synthesis.
-4. Data/media (NDData) behind tensors can be progressivly transitioned between native-tensored, buffered, mime-compressed and remote-pathed states. Allowing natural integration of standard image, video, zip and other compression schemes.
-5. Streaming is achieved via scene patches/updates, including scenes which are themselves queries for additional content, and which generally leverage a secondary path-based file/shared-memory system for same-device or cacheable content.
-6. "Hardware Acceleration" (NDTorch) is achieved via PyTorch which is required for rendering (with CPU fallback), but optional for basic scene-graph file-IO.
+* Scene Graph: there are three main uses of scene-graphs:
+    * Managing collections of related elements: `node : { name:str, pose:tensor, data:tensor, children:[node] }`
+    * Evaluating the sum of a node and it's children: `node.value() : node.pose * concat( node.data, c.value() for c in node.children )`
+    * Updating the view from a 'camera/viewer' node: `node.update() : node.data = concat(c.unpose for c in node.parents_to_root()) * root.value()` 
+* Render Kernel (NDRender): is an dictionary-of-tensor enhanced version of the original OpenGL1-style rendering API:
+    * `ndBegin(target)`
+    * `ndPush(pose,unpose)` # pushes a transform/inverse
+    * `ndConcat(data)` # append this data transformed by current pose stack
+    * `ndPop()` # pop an item from the transform stack
+    * `ndEnd()` # return the 
+* Tensors (target/transform/data) can be nestable dictionaries/lists of native/parameterized/autograd tensors or named methods/modules/dimensions (NDTensor|dict|list|torch.tensor).
+    * `{ "vertices":{"shape":[8,3],"data":[1.0,0.0,1.0,...],`
+    * `"indices":{"shape":[12,3],"dtype":"uint16","data":[0,2,1,...],`
+    * `"colors":{"shape":[8,3],"dtype":"float","data":[0.5,1.0,0.5,...]}`
+* Pose/Unpose (NDTensor) is used to pose data into it's parent space, or unpose it back into it's child/data space. I.e. you can transform filtered dictionaries of tensors using matrix multiplication (default), listed sequences of steps, or with an extensible set of standard transforms (append_ones, projection, index_to_). Inversion/"unpose" is used to support optimization and target relative transforms such as viewport encoding.
+* Data/media (NDData) behind tensors can be progressivly transitioned between native-tensored, buffered, mime-compressed and remote-pathed states. Allowing natural integration of standard image, video, zip and other compression schemes.
+* Streaming is achieved via scene patches/updates, including scenes which are themselves queries for additional content, and which generally leverage a secondary path-based file/shared-memory system for same-device or cacheable content.
+* "Hardware Acceleration" (NDTorch) is achieved via PyTorch which is required for rendering (with CPU fallback), but optional for basic scene-graph file-IO.
 
 ## JSON Schema
 
