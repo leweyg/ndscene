@@ -56,7 +56,7 @@ def main_freed_go_test():
     for view_path in input_views:
         scene = ndscene.NDJson.scene_from_path(view_path)
         ndscene.NDMethod.setup_standard_methods(scene)
-        board_size = calc_board_size_2n_from_mn(scene)
+        #board_size = calc_board_size_2n_from_mn(scene)
 
         world = scene.root.child_find("world")
         
