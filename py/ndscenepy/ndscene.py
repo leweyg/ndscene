@@ -876,7 +876,8 @@ class NDRender:
         if (cursor in excluding):
             return ans
         if (cursor.name == "voxels"):
-            print("Found it...");
+            #print("Found it...") # for debugging
+            pass
         self.ndPush(cursor.pose, cursor.unpose)
         if (cursor.content is not None):
             ans = self.ndConcat(cursor.content)

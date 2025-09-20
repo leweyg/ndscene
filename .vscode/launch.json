@@ -36,6 +36,14 @@
             "program": "examples/ndscene_freed_go.py",
             "cwd": "${workspaceFolder}/py",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Freed Go TaiChi",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "examples/ndscene_freed_go_taichi.py",
+            "cwd": "${workspaceFolder}/py",
+            "console": "integratedTerminal"
         }
     ]
 }
