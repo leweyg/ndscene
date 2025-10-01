@@ -1,6 +1,7 @@
 
 # ndScene Summary
 # NDScene { NDObject { NDTensor { NDData { tensor/compression/path } } } } 
+from typing import Callable
 
 def NDTODO(desc=""):
     print("NDTODO:", desc)
@@ -278,7 +279,7 @@ class NDTensor():
         return NDTensor.from_data(NDData.from_tensor(tensor))
 
     def __str__(self):
-        ans = "{"
+        ans = "{ndtensor:"
         if (self.key):
             ans += f"\"{self.key}\":"
         if (self.size):
@@ -426,17 +427,28 @@ class NDObject():
             ans += "]"
         ans += "}"
         return ans
-    
+
+    def __repr__(self):
+            return str(self)
+
+NDMethodCallback=Callable[[NDData,"NDRender",bool],NDData]
+
 class NDMethod():
     name :str = None
-    callback = None
-    inverse_of = None
+    callback : NDMethodCallback = None
+    inverse_of : "NDMethod" = None
     
     def __init__(self,name=None):
         self.name = name
         self.callback = NDMethod.passthrough
         self.method_is_inverse = False
         pass
+
+    def __str__(self):
+        return "@method:" + (self.name if self.name else "unnamed") + (f" inverse_of={self.inverse_of.name}" if self.inverse_of else "")
+    
+    def __repr__(self):
+        return str(self)
 
     @staticmethod
     def inverse_of_method(other : "NDMethod"):
@@ -445,7 +457,7 @@ class NDMethod():
         ans.inverse_of = other
         return ans
 
-    def apply_method_to_data(self, data:NDData, state:"NDRender",is_inverse:bool):
+    def apply_method_to_data(self, data:NDData, state:"NDRender", is_inverse:bool):
         if (not self.callback):
             msg = "Need to associate a callback for '" + self.name + "'."
             print(msg)
@@ -499,7 +511,19 @@ class NDMethod():
         return ids
     
     @staticmethod
-    def unit_index_from_data(data, state, is_inverse):
+    def unit_index_from_data(data_orig:NDData, state:"NDRender", is_inverse:bool):
+        data = data_orig
+        if is_inverse:
+            target_shape = state.target_peek().shape
+            NDTODO_IF(len(target_shape) != data.shape[-1], "dimensions must match")
+            import torch
+            scaler = [ (s-1) for s in target_shape ]
+            scaler = torch.tensor(scaler)
+            ans = scaler * data
+            return ans
+        if (isinstance(data,dict)):
+            if ('opacity' in data):
+                data = data['opacity']
         index_nd = NDMethod.index_nd_from_data(data)
         n = index_nd.shape[0]
         d = index_nd.shape[1]
@@ -507,7 +531,10 @@ class NDMethod():
         scaler = [1.0/(s-1) for s in data.shape]
         scaler = torch.tensor(scaler)
         ans = scaler * index_nd
-        #print(ans)
+        if (isinstance(data_orig,dict)):
+            ans_dict = dict(data_orig)
+            ans_dict['vertices'] = ans
+            ans = ans_dict
         return ans
 
     @staticmethod
@@ -691,15 +718,26 @@ class NDJson:
 
 class NDMath:
     @staticmethod
-    def inverse_pose(pose:NDTensor):
+    def inverse_pose(pose:NDTensor, state:"NDRender"):
         if (isinstance(pose,NDMethod)):
             return NDMethod.inverse_of_method(pose)
         if (isinstance(pose,list)):
-            unpose_seq = [NDMath.inverse_pose(p) for p in reversed(pose)]
+            unpose_seq = [NDMath.inverse_pose(p, state) for p in reversed(pose)]
             return list(unpose_seq)
         import torch
         pose = NDTorch.native_tensor(pose)
-        pose = torch.linalg.inv(pose)
+        NDTODO_IF(len(pose.shape) != 2, "has to be 2d matrix")
+        if (pose.shape[0] == pose.shape[1]):
+            pose = torch.linalg.inv(pose)
+        elif (pose.shape[0]-1 == pose.shape[1]):
+            # assume last row is [0,0,0,1]
+            small = pose[0:(pose.shape[0]-1), :]
+            small = torch.linalg.inv(small)
+            last_row = pose[-1,:].reshape([pose.shape[1],1])
+            pose = torch.concat( [small, -last_row], 1 )
+        else:
+            raise "Can't invert a non-square matrix."
+        
         return pose;
     @staticmethod
     def apply_pose_to_data(pose:NDTensor, data:NDTensor, state:"NDRender"):
@@ -773,10 +811,24 @@ class NDTorch:
         NDTensor.data.tensor = ans
         return ans
 
+class NDPoseStackEntry:
+    pose :NDTensor = None
+    node : NDObject = None
+
+    def __init__(self, pose:NDTensor=None, node:NDObject=None):
+        self.pose = pose
+        self.node = node
+        pass
+
+    def __repr__(self):
+        return f"@pose_entry: node={self.node.name if self.node else 'None'} pose={self.pose}"
+
 class NDRender:
     state_result :NDTensor = None
     state_result_tensor = None
-    stack_pose   :list[NDTensor] = None
+    state_node_posing :NDObject = None
+    state_node_source :NDObject = None
+    stack_pose   :list[NDPoseStackEntry] = None
     scene :NDScene = None
 
     # Rendering API (NDTensor only):
@@ -784,28 +836,34 @@ class NDRender:
         self.state_result = NDJson.native_tensor(res)
         self.state_result_tensor = res_tensor
         
-    def ndPush(self, pose: NDTensor, unpose :NDTensor):
+    def ndPush(self, pose: NDTensor, unpose :NDTensor, node:NDObject=None):
         """pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored."""
         if (pose is not None):
-            self.stack_pose.append(pose)
+            self.stack_pose.append(NDPoseStackEntry(pose,node))
             return
         if (unpose is not None):
-            inv = NDMath.inverse_pose(unpose)
-            self.stack_pose.append(inv)
+            inv = NDMath.inverse_pose(unpose, self)
+            self.stack_pose.append(NDPoseStackEntry(inv,node))
             return;
-        self.stack_pose.append(None)
+        # both are None:
+        self.stack_pose.append(NDPoseStackEntry(None,node))
 
-    def ndConcat(self, data :NDTensor):
+    def ndConcat(self, data :NDTensor, node:NDObject) -> NDTensor:
         """concatenates the data to existing input data given the current transform stack."""
         ans = data
+        self.state_node_source = node
         for p in reversed(self.stack_pose):
-            ans = NDMath.apply_pose_to_data(p, ans, self)
-        if (self.state_result):
+            self.state_node_posing = p.node
+            ans = NDMath.apply_pose_to_data(p.pose, ans, self)
+            self.state_node_posing = None
+        if (self.state_result is not None):
             dst = self.scene.native_tensor( self.state_result_tensor )
             dst = NDRender.scatterND(dst, ans['vertices'], ans.get('color'))
             self.state_result_tensor = dst
             self.state_result.data.tensor = dst
+            self.state_node_source = None
             return self.state_result
+        self.state_node_source = None
         return ans
 
     def ndPop(self):
@@ -866,7 +924,7 @@ class NDRender:
         while (cursor):
             # first push inverses back to world:
             latest = cursor
-            self.ndPush(cursor.unpose, cursor.pose)
+            self.ndPush(cursor.unpose, cursor.pose, cursor)
             cursor = cursor.parent_any_to_world()
         return latest
     
@@ -878,9 +936,9 @@ class NDRender:
         if (cursor.name == "voxels"):
             #print("Found it...") # for debugging
             pass
-        self.ndPush(cursor.pose, cursor.unpose)
+        self.ndPush(cursor.pose, cursor.unpose, cursor)
         if (cursor.content is not None):
-            ans = self.ndConcat(cursor.content)
+            ans = self.ndConcat(cursor.content, cursor)
         if (cursor.children and (not stop_at_first or not ans)):
             for child in cursor.children:
                 ans = self.concat_children_recursive(child, excluding)

@@ -73,7 +73,7 @@ def main_freed_go_test():
         renderer = ndscene.NDRender()
 
         # 1. first sample the image into the voxels:
-        #renderer.update_object_from_world(voxel_data, scene)
+        # renderer.update_object_from_world(voxel_data, scene)
 
         # 2. draw the voxels to the world:
         #image_tensor[:,:,0:3].fill_(0)
