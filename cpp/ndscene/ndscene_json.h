@@ -6,7 +6,7 @@
 #include <vector>
 #include <stdio.h>
 
-#define ND_ASSERT(stmt) {if(!(stmt)){NdUtil::FailedAssert(#stmt, __FILE__, __LINE__);}}
+#define ND_ASSERT(stmt) {if(!(stmt)){NdUtils::FailedAssert(#stmt, __FILE__, __LINE__);}}
 
 class NdUtils {
 public:
