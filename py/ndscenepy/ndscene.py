@@ -292,7 +292,8 @@ class NDTensor():
         if (self.dtype):
             ans += f"<{self.dtype}>"
         if (self.data):
-            ans += f"={self.data}"
+            ans += f"=data..."
+        #    ans += f"={self.data}"
         ans += "}"
         return ans
     
@@ -823,28 +824,57 @@ class NDPoseStackEntry:
     def __repr__(self):
         return f"@pose_entry: node={self.node.name if self.node else 'None'} pose={self.pose}"
 
+class NDLogRender:
+    def __init__(self, render:"NDRender"):
+        self.render = render
+    def append(self, msg:str, val=None, node:NDObject=None):
+        print("NDLogRender:", msg, self.custom_str(val), node.name if node else "?")
+    def custom_str(self, val=None):
+        if (val is None):
+            return "None"
+        import torch
+        if (torch.is_tensor(val)):
+            return f"tensor(shape={val.shape},dtype={val.dtype})"
+        s = repr(val)
+        if (len(s) > 40):
+            s = s[0:40] + "..."
+        return s
+
 class NDRender:
     state_result :NDTensor = None
     state_result_tensor = None
     state_node_posing :NDObject = None
     state_node_source :NDObject = None
+    state_node_target :NDObject = None
     stack_pose   :list[NDPoseStackEntry] = None
     scene :NDScene = None
+    logger :NDLogRender = None
+
+    def __init__(self):
+        self.stack_pose = []
+        self.logger = NDLogRender(self)
+        pass
 
     # Rendering API (NDTensor only):
-    def ndBegin(self, res :NDTensor, res_tensor):
+    def ndBegin(self, res :NDTensor, res_tensor, node:NDObject):
         self.state_result = NDJson.native_tensor(res)
         self.state_result_tensor = res_tensor
+        self.state_node_target = node
+        self.logger.append("ndBegin", res)
         
     def ndPush(self, pose: NDTensor, unpose :NDTensor, node:NDObject=None):
         """pushes a transform onto the stack (on the right), if pose is not provided, and unpose is provided, then the inverse of unpose will be pushed, otherwise it will be ignored."""
         if (pose is not None):
-            self.stack_pose.append(NDPoseStackEntry(pose,node))
+            entry = NDPoseStackEntry(pose,node)
+            self.stack_pose.append(entry)
+            self.logger.append("ndPush", entry, node)
             return
         if (unpose is not None):
             inv = NDMath.inverse_pose(unpose, self)
-            self.stack_pose.append(NDPoseStackEntry(inv,node))
-            return;
+            entry = NDPoseStackEntry(inv,node)
+            self.stack_pose.append(entry)
+            self.logger.append("ndPush", entry, node)
+            return
         # both are None:
         self.stack_pose.append(NDPoseStackEntry(None,node))
 
@@ -852,6 +882,7 @@ class NDRender:
         """concatenates the data to existing input data given the current transform stack."""
         ans = data
         self.state_node_source = node
+        self.logger.append("ndConcat", data, node)
         for p in reversed(self.stack_pose):
             self.state_node_posing = p.node
             ans = NDMath.apply_pose_to_data(p.pose, ans, self)
@@ -870,17 +901,19 @@ class NDRender:
         n = len(self.stack_pose)
         if (n <= 0):
             raise "Can't call 'ndPop' on an empty pose stack."
-        self.stack_pose.pop()
+        popped = self.stack_pose.pop()
+        if (len(self.stack_pose) > 0):
+            self.logger.append("ndPop", None, self.stack_pose[-1].node)
+        else:
+            self.logger.append("ndPop", None, None)
 
     def ndEnd(self) -> NDTensor:
         """returns the data transformed by the poses"""
+        self.logger.append("ndEnd", self.state_result_tensor, self.state_node_target)
         return self.state_result
     
     def target_peek(self):
         return self.state_result
-
-    def __init__(self):
-        self.stack_pose = []
 
     # Scene API (NDScene level):
     def update_object_from_world(self, target:NDObject, scene:NDScene):
@@ -899,7 +932,7 @@ class NDRender:
         excluding = {}
         excluding[target] = True
         target_tensor = NDTensor.native_tensor(target.content, scene)
-        self.ndBegin(target.content, target_tensor)
+        self.ndBegin(target.content, target_tensor, target)
         world = self.push_scene_back_to_world(target)
         world_depth = len(self.stack_pose)
         res = self.state_result_tensor
