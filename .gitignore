@@ -5,3 +5,4 @@
 py/ndscenepy/ndscene.egg-info/*
 py/tests/.results/*
 
+cpp/tests/test_app
