@@ -6,35 +6,105 @@
 #include <vector>
 #include <stdio.h>
 
-#define ND_ASSERT(stmt) {if(!(stmt)){NdUtils::FailedAssert(#stmt, __FILE__, __LINE__);}}
-
-class NdUtils {
-public:
-    static void FailedAssert(const char* stmt, const char* file, int line) {
-        printf("Failed Assert:%s at %s(%d)\n", stmt, file, line);
-    }
-};
-
-class NdJsonNode {
-protected:
-    std::string mKey;
-    std::string mValue;
-    std::vector<std::shared_ptr<NdJsonNode>> mChildren;
-public:
-    NdJsonNode() {}
-};
-typedef std::shared_ptr<NdJsonNode> NdJsonNodePtr;
+#include "ndtensor.h"
 
 class NdJsonParser {
 protected:
     const char* mText = nullptr;
     size_t mPos = 0;
     size_t mLen = 0;
-    NdJsonNodePtr mResult;
+    NdTensorPtr mResult;
+    NdTensorPtr mDebugLatest;
 
-    NdJsonNodePtr parseObject() {
+    NdTensorPtr parseObject() {
         skipWhitespace();
-        NdJsonNodePtr ans = std::make_shared<NdJsonNode>();
+        NdTensorPtr ans = NdTensor::MakeShared();
+        char letter = currentLetter();
+        if (letter == '\"') {
+            std::string key = parseQuoted();
+            ans->mData = NdData::MakeShared();
+            ans->mData->setText(key.c_str());
+            return ans;
+        } else if (letter == '{') {
+            stepNext();
+            skipWhitespace();
+            auto prevPos = ~mPos;
+            while (currentLetter() != '}') {
+                if (mPos == prevPos) {
+                    printCurrent();
+                }
+                ND_ASSERT(mPos != prevPos);
+                prevPos = mPos;
+                if (currentLetter() == '\"') {
+                    skipWhitespace();
+                    std::string key = parseQuoted();
+                    if (currentLetter() == ':') {
+                        stepNext();
+                        NdTensorPtr val = parseObject();
+                        val->mKey = key;
+                        ans->mShape.push_back(val);
+                    }
+                    if (currentLetter() == ',') {
+                        ans->mData = NdData::MakeShared();
+                        ans->mData->setText(key.c_str());
+                        stepNext(); skipWhitespace();
+                    }
+                    if (currentLetter() == '}') {
+                        stepNext(); skipWhitespace();
+                        return ans;
+                    } else {
+                        printCurrent(ans);
+                        ND_ASSERT(false);
+                    }
+                }
+                else
+                {
+                    printCurrent();
+                    ND_ASSERT(false);
+                }
+            }
+        } else {
+            printCurrent();
+            ND_ASSERT(false);
+        }
+        return ans;
+    }
+
+    void printCurrent(NdTensorPtr ptr = nullptr) {
+        int line = 1;
+        int col = 1;
+        for (size_t i=0; i<mPos; i++) {
+            if (mText[i] == '\n') {
+                line++;
+                col=1;
+            } else {
+                col++;
+            }
+        }
+        std::string clip;
+        const int max_clip_len = 6;
+        for (int i=0; i<max_clip_len; i++) {
+            if ((mPos+i) < mLen) {
+                clip += mText[mPos+i];
+            }
+        }
+        printf("Current letter: '%c' of '%s' line %d, col %d, pos %d \n", currentLetter(), clip.c_str(), line, col, (int)mPos);
+        if (ptr) {
+            printf("Current state: %s\n", ptr->asString().c_str());
+        }
+    }
+
+    std::string parseQuoted() {
+        ND_ASSERT(currentLetter() == '\"');
+        stepNext();
+        size_t start = mPos;
+        while (currentLetter() != '\"' && stepNext()) {
+        }
+        size_t end = mPos;
+        ND_ASSERT(currentLetter() == '\"');
+        stepNext();
+        skipWhitespace();
+        std::string ans(mText + start, end - start);
         return ans;
     }
 
@@ -52,7 +122,9 @@ protected:
 
     void skipWhitespace() {
         while (isWhiteSpace(currentLetter())) {
-            stepNext();
+            if (!stepNext()) {
+                return;
+            }
         }
     }
 
@@ -76,7 +148,7 @@ public:
         mLen = strlen(pText);
     }
 
-    NdJsonNodePtr parse() {
+    NdTensorPtr parse() {
         if (mResult) {
             return mResult;
         }

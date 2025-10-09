@@ -28,7 +28,9 @@ int main(int argc, char** argv) {
     printf("Hello, World!\n");
 
     std::string jsonText = readFileAsString(gTextFilePath);
-    printf("JsonText='%s'", jsonText.c_str());
+    printf("JsonText='%s'\n", jsonText.c_str());
+
+    auto node = NdJsonParser(jsonText.c_str()).parse();
 
     return 0;
 }
