@@ -35,6 +35,9 @@ public:
     static std::shared_ptr<NdData> MakeShared() {
         return std::make_shared<NdData>();
     }
+    static std::shared_ptr<NdData> MakeString(const char* str) {
+        return std::make_shared<NdData>(str);
+    }
 };
 
 class NdTensor {

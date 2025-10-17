@@ -25,6 +25,26 @@ protected:
             ans->mData = NdData::MakeShared();
             ans->mData->setText(key.c_str());
             return ans;
+        } else if (isNumberChar(letter)) {
+            auto start = mPos;
+            while (isNumberChar(letter) && stepNext()) {
+            }
+            auto end = mPos;
+            std::string numberStr(mText + start, end - start);
+            ans->mData = NdData::MakeString(numberStr.c_str());
+            skipWhitespace();
+            return ans;
+        } else if (letter == '[') {
+            stepNext(); skipWhitespace();
+            while (currentLetter() != ']') {
+                auto item = parseObject();
+                ans->mShape.push_back(item);
+                if (currentLetter() == ',') {
+                    stepNext(); skipWhitespace();
+                }
+            }
+            stepNext(); skipWhitespace();
+            return ans;
         } else if (letter == '{') {
             stepNext();
             skipWhitespace();
@@ -44,27 +64,23 @@ protected:
                         val->mKey = key;
                         ans->mShape.push_back(val);
                     }
-                    if (currentLetter() == ',') {
-                        ans->mData = NdData::MakeShared();
-                        ans->mData->setText(key.c_str());
-                        stepNext(); skipWhitespace();
-                    }
-                    if (currentLetter() == '}') {
-                        stepNext(); skipWhitespace();
-                        return ans;
-                    } else {
-                        printCurrent(ans);
-                        ND_ASSERT(false);
-                    }
+                    continue;
                 }
-                else
-                {
-                    printCurrent();
-                    ND_ASSERT(false);
+                if (currentLetter() == ',') {
+                    stepNext(); skipWhitespace();
+                    continue;
                 }
+                if (currentLetter() == '}') {
+                    stepNext(); skipWhitespace();
+                    return ans;
+                }
+                if (mPos == prevPos) {
+                    printCurrent(ans);
+                }
+                ND_ASSERT(mPos != prevPos);
             }
         } else {
-            printCurrent();
+            printCurrent(ans);
             ND_ASSERT(false);
         }
         return ans;
@@ -120,6 +136,19 @@ protected:
         }
     }
 
+    static bool isNumberChar(char letter) {
+        if (letter >= '0' && letter <= '9') {
+            return true;
+        }
+        if (letter == '.') {
+            return true;
+        }
+        if (letter == '-') {
+            return true;
+        }
+        return false;
+    }
+
     void skipWhitespace() {
         while (isWhiteSpace(currentLetter())) {
             if (!stepNext()) {
@@ -128,7 +157,7 @@ protected:
         }
     }
 
-    char currentLetter() {
+    char currentLetter() const {
         return mText[mPos];
     }
 
@@ -139,6 +168,10 @@ protected:
         } else {
             return false;
         }
+    }
+
+    bool isAtEnd() const {
+        return ((mPos + 1) >= mLen);
     }
 
 public:

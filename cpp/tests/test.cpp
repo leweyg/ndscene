@@ -4,6 +4,8 @@
 
 #include "../ndscene/ndscene_json.h"
 
+#include "test.h"
+
 const char* gTextFilePath = "json/freed_go/voxels.json"; //"json/freed_go/view_1_scene.json";
 
 std::string readFileAsString(const char* path) {
@@ -27,10 +29,14 @@ std::string readFileAsString(const char* path) {
 int main(int argc, char** argv) {
     printf("Hello, World!\n");
 
+    SortingTest::RunTest();
+    return 0;
+
     std::string jsonText = readFileAsString(gTextFilePath);
     printf("JsonText='%s'\n", jsonText.c_str());
 
     auto node = NdJsonParser(jsonText.c_str()).parse();
+    printf("Node=%s\n", node->asString().c_str());
 
     return 0;
 }
