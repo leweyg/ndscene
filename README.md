@@ -2,7 +2,17 @@
 # NDRender and NDScene (ndscene)
 n-dimensional scene-graph runtime and format; allowing AI vision models to be expressed as the updating of an tensor-asset within a posed scene-graph. Such as a virtual camera or tile within a field of known camera views. Dictionaries of tensors are used throughout to provide flexability and named multi-dimensionality in addition to dense tensor formats.
 
-## Abstract / Architectural Principals
+## Scene Equations
+
+1. Scene type: `scene : { shape:[scene], data:tensor, dtype:str, name:str, count:int }`
+2. Scene value: `s.value(name) = concat( s.data[name==s.name] * children(s) )`
+3. Scene to world: `s.data_to_world() = product( p.data for p in parents(p) )`
+4. Scene from world: `s.world_to_data() = product( inverse(p.data) for p in parents(s) )`
+5. Scene update: `update(dest,src) = dest.data <-- dest.world_to_data() * src.data_to_world() * src.data`
+6. Recursive tensor mulplication: `See: @staticmethod def apply_pose_to_data(pose:NDTensor, data:NDTensor, state:"NDRender")`
+7. Recursive tree iteration: `See NDRender.ndBegin --> ndPush(pose:tensor,unpose:tensor) --> ndConcat(tensor) --> ndPop() --> ndEnd()`
+
+## Abstract
 
 * Scene Graph: there are three main uses of scene-graphs:
     * Managing collections of related elements: `node : { name:str, pose:tensor, data:tensor, children:[node] }`
