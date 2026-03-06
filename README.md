@@ -1,33 +1,31 @@
 
-# NDRender and NDScene (ndscene)
+# ndScene 
+
+
+
 n-dimensional scene-graph runtime and format; allowing AI vision models to be expressed as the updating of an tensor-asset within a posed scene-graph. Such as a virtual camera or tile within a field of known camera views. Dictionaries of tensors are used throughout to provide flexability and named multi-dimensionality in addition to dense tensor formats.
 
-## Scene Equations
+## The N-Dimensional Engine Stack
 
-1. Scene type: `scene : { shape:[scene], data:tensor, dtype:str, name:str, count:int }`
-2. Scene value: `s.value(name) = concat( s.data[name==s.name] * children(s) )`
-3. Scene to world: `s.data_to_world() = product( p.data for p in parents(p) )`
-4. Scene from world: `s.world_to_data() = product( inverse(p.data) for p in parents(s) )`
-5. Scene update: `update(dest,src) = dest.data <-- dest.world_to_data() * src.data_to_world() * src.data`
-6. Recursive tensor mulplication: `See: @staticmethod def apply_pose_to_data(pose:NDTensor, data:NDTensor, state:"NDRender")`
-7. Recursive tree iteration: `See NDRender.ndBegin --> ndPush(pose:tensor,unpose:tensor) --> ndConcat(tensor) --> ndPop() --> ndEnd()`
-
-## Abstract
-
-* Scene Graph: there are three main uses of scene-graphs:
-    * Managing collections of related elements: `node : { name:str, pose:tensor, data:tensor, children:[node] }`
-    * Evaluating the sum of a node and it's children: `node.value() : node.pose * concat( node.data, c.value() for c in node.children )`
-    * Updating the view from a 'camera/viewer' node: `node.update() : node.data = concat(c.unpose for c in node.parents_to_root()) * root.value()` 
-* Render Kernel (NDRender): is an dictionary-of-tensor enhanced version of the original OpenGL1-style rendering API:
-    * `ndBegin(target)`
-    * `ndPush(pose,unpose)` # pushes a transform/inverse
-    * `ndConcat(data)` # append this data transformed by current pose stack
-    * `ndPop()` # pop an item from the transform stack
-    * `ndEnd()` # return the 
-* Tensors (target/transform/data) can be nestable dictionaries/lists of native/parameterized/autograd tensors or named methods/modules/dimensions (NDTensor|dict|list|torch.tensor).
+* Nested/Recursive Tensors: supports dictionaries of tensors, and transforms on shape dimenions.
     * `{ "vertices":{"shape":[8,3],"data":[1.0,0.0,1.0,...],`
     * `"indices":{"shape":[12,3],"dtype":"uint16","data":[0,2,1,...],`
     * `"colors":{"shape":[8,3],"dtype":"float","data":[0.5,1.0,0.5,...]}`
+* Scene Graph: there are three main uses of scene-graphs:
+    * Expressing connected views of a scene (cameras, sensors, poses, actuators, etc.): `node : { name:str, pose:tensor, data:tensor, children:[node] }`
+    * Breaking up large content into sub-elements/tiles: `node.value() : node.pose * concat( node.data, c.value() for c in node.children )`
+    * Updating the view from a 'camera/viewer' node: `node.update() : node.data = concat(c.unpose for c in node.parents_to_root()) * root.value()` 
+* Models / Transform Stacks / Rendering (NDRender): provides unified push and pull tensor processing semanics
+    * `ndBegin(target)`
+    * `ndPush(pose-encoder,unpose-decoder)` # push a transform or inverse-transform onto the stack
+    * `ndConcat(data)` # append this data transformed by current pose stack
+    * `ndPop()` # pop an item from the transform stack
+    * `ndEnd()` # return the 
+    * Compiles to 
+
+
+## Abstract
+
 * Pose/Unpose (NDTensor) is used to pose data into it's parent space, or unpose it back into it's child/data space. I.e. you can transform filtered dictionaries of tensors using matrix multiplication (default), listed sequences of steps, or with an extensible set of standard transforms (append_ones, projection, index_to_). Inversion/"unpose" is used to support optimization and target relative transforms such as viewport encoding.
 * Data/media (NDData) behind tensors can be progressivly transitioned between native-tensored, buffered, mime-compressed and remote-pathed states. Allowing natural integration of standard image, video, zip and other compression schemes.
 * Streaming is achieved via scene patches/updates, including scenes which are themselves queries for additional content, and which generally leverage a secondary path-based file/shared-memory system for same-device or cacheable content.
