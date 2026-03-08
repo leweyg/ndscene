@@ -2,17 +2,43 @@
 
 var MriRender_Create = function (scene) {
 
-    const mri_layers = 48; // slice_0 through slice_47
+    const mri_layers = 24; // 48; // slice_0 through slice_47
 
     const geometry = new THREE.PlaneBufferGeometry( 20, 20 );
     const textureLoader = new THREE.TextureLoader();
 
+    const vertexShader = `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `;
+
+    const fragmentShader = `
+        uniform sampler2D texture1;
+        varying vec2 vUv;
+        void main() {
+            vec4 texColor = texture2D(texture1, vUv);
+            gl_FragColor = vec4(texColor.rgb, texColor.g);
+        }
+    `;
+
     const loadSlice = function(index) {
         const imagePath = `./orange/slice_${index}.png`;
         textureLoader.load(imagePath, function(texture) {
-            const material = new THREE.MeshLambertMaterial( { map: texture } );
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    texture1: { value: texture }
+                },
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                transparent: true
+            });
             const object = new THREE.Mesh( geometry, material );
-            object.position.z = index * 1.5; // Stack slices along z-axis with spacing
+            object.position.z = index * 2.0; // Stack slices along z-axis with spacing
+            object.scale.x = 4.0;
+            object.scale.y = 4.0;
             scene.add( object );
         });
     };
