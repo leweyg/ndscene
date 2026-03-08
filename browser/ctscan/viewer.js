@@ -2,30 +2,23 @@
 
 var MriRender_Create = function (scene) {
 
-    const geometry = new THREE.BoxBufferGeometry( 20, 20, 1.0 );
+    const mri_layers = 48; // slice_0 through slice_47
 
-    const mri_layers = 47;
+    const geometry = new THREE.PlaneBufferGeometry( 20, 20 );
+    const textureLoader = new THREE.TextureLoader();
+
+    const loadSlice = function(index) {
+        const imagePath = `./orange/slice_${index}.png`;
+        textureLoader.load(imagePath, function(texture) {
+            const material = new THREE.MeshLambertMaterial( { map: texture } );
+            const object = new THREE.Mesh( geometry, material );
+            object.position.z = index * 1.5; // Stack slices along z-axis with spacing
+            scene.add( object );
+        });
+    };
 
     for ( let i = 0; i < mri_layers; i ++ ) {
-
-        const object = new THREE.Mesh( geometry, new THREE.MeshLambertMaterial( { color: Math.random() * 0xffffff } ) );
-
-        object.position.x = Math.random() * 2 - 1;
-        object.position.y = Math.random() * 2 - 1;
-        object.position.z = Math.random() * 2 - 1;
-        // object.position.multiplyScalar( board_scale );
-
-        object.rotation.x = Math.random() * 2 * Math.PI;
-        object.rotation.y = Math.random() * 2 * Math.PI;
-        object.rotation.z = Math.random() * 2 * Math.PI;
-
-        object.scale.x = Math.random() + 0.5;
-        object.scale.y = Math.random() + 0.5;
-        object.scale.z = Math.random() + 0.5;
-        // object.scale.multiplyScalar( piece_scale );
-
-        scene.add( object );
-
+        loadSlice(i);
     }
 }
 
