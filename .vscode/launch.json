@@ -6,11 +6,19 @@
     "configurations": [
 
         {
-            "name": "Python Debugger: Current File",
+            "name": "PyFile in PyDir",
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
             "cwd": "${workspaceFolder}/py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "PyFile in Git Dir",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "${workspaceFolder}",
             "console": "integratedTerminal"
         },
         {
