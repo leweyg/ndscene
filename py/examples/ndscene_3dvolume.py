@@ -1,7 +1,7 @@
 
 
 import imageio
-
+import numpy
 
 def main_processor():
     path_src = "browser/ctscan/orange_615.gif"
@@ -12,6 +12,9 @@ def main_processor():
     square_size = 512
     crop = center_crop(original, square_size)
 
+    if True:
+        crop = flood_fill_out(crop)
+
     frame_count = crop.shape[0]
     frame_paths = []
     for frame_index in range(frame_count):
@@ -21,7 +24,23 @@ def main_processor():
         print(f"Saving to {path_dst}")
         imageio.v3.imwrite(path_dst, slice)
 
+def flood_fill_out(volume):
     
+    opacities = volume[:,:,:,1]
+    fills = volume[:,:,:,0]
+    fills[:,:,:] = numpy.zeros_like(fills)
+    fills = fills.astype(int)
+    center_pos = fills.shape
+    center_pos = [center_pos[0]//2, center_pos[1]//2, center_pos[2]//2]
+
+
+    extra_opacity = numpy.expand_dims( opacities, axis=-1)
+    volume = numpy.concat((volume,extra_opacity), axis=3)
+    volume[:,:,:,0] = fills
+    volume[:,:,:,1] = opacities
+    volume[:,:,:,2] = opacities
+    volume[:,:,:,3] = opacities
+    return volume
 
 
 def center_crop(frame, target_square):
