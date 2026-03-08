@@ -1,4 +1,35 @@
 
+
+var MriRender_Create = function (scene) {
+
+    const geometry = new THREE.BoxBufferGeometry( 20, 20, 1.0 );
+
+    const mri_layers = 47;
+
+    for ( let i = 0; i < mri_layers; i ++ ) {
+
+        const object = new THREE.Mesh( geometry, new THREE.MeshLambertMaterial( { color: Math.random() * 0xffffff } ) );
+
+        object.position.x = Math.random() * 2 - 1;
+        object.position.y = Math.random() * 2 - 1;
+        object.position.z = Math.random() * 2 - 1;
+        // object.position.multiplyScalar( board_scale );
+
+        object.rotation.x = Math.random() * 2 * Math.PI;
+        object.rotation.y = Math.random() * 2 * Math.PI;
+        object.rotation.z = Math.random() * 2 * Math.PI;
+
+        object.scale.x = Math.random() + 0.5;
+        object.scale.y = Math.random() + 0.5;
+        object.scale.z = Math.random() + 0.5;
+        // object.scale.multiplyScalar( piece_scale );
+
+        scene.add( object );
+
+    }
+}
+
+
 var FreedGoGame_Create = function() {
     var ans = Object.create( FreedGoPrototype_Game );
     ans.Setup();
