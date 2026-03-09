@@ -30,10 +30,13 @@
             - <span id="board_title"></span>
             
             <a href="http://lewcid.com/" target="_blank" rel="noopener">lewcid.com</a> 
+
+            - <input type="checkbox" checked id="main_option_time_ripple" onchange="onChangedTimeRipple()">time ripple</input>
         </div>
         <script>
             var game = null;
             var freedGoDataPath = "public/rooms";
+            var doTimeRippleChange = ((enabled) => {});
 
             var new_board_selector_ignore_change = false;
             function changeBoardSelector(toName) {
@@ -41,6 +44,11 @@
                 new_board_selector_ignore_change = true;
                 new_board_selector.value = toName;
                 new_board_selector_ignore_change = false;
+            }
+
+            function onChangedTimeRipple() {
+                var timeRippleEnabled = main_option_time_ripple.checked;
+                doTimeRippleChange(timeRippleEnabled);
             }
 
 
@@ -144,6 +152,11 @@
                 game.Render.Build ( scene );
 
                 mri_info = MriRender_Create( scene );
+
+                doTimeRippleChange = ((enabled) => {
+                    mri_info.time_ripple = enabled ? 1.0 : 0.0;
+                    requestRedraw();
+                });
 
                 /*
                 const randomObjectsToAdd = 20;
@@ -272,8 +285,9 @@
 
                 if (isMove) {
                     var lerpFactor = 0.03;
-                    camera_rotate_around = customLerp( camera_rotate_around, mouse.x * 60.0, lerpFactor );
-                    camera_rotate_up = customLerp( camera_rotate_up, mouse.y * 60.0, lerpFactor );
+                    const angleScale = 30.0;
+                    camera_rotate_around = customLerp( camera_rotate_around, mouse.x * angleScale, lerpFactor );
+                    camera_rotate_up = customLerp( camera_rotate_up, mouse.y * angleScale, lerpFactor );
                 }
 
                 mousePrevious.copy( mouse );

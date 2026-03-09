@@ -19,6 +19,7 @@ var MriRender_Create = function (scene) {
     const fragmentShader = `
         uniform sampler2D texture1;
         uniform float time;
+        uniform float time_ripple;
         varying vec3 vUVW;
         void main() {
             vec4 texColor = texture2D(texture1, vUVW.xy);
@@ -33,7 +34,7 @@ var MriRender_Create = function (scene) {
             float ripple = cos( ( time * 1.0 ) + (ripple_axis * 3.14159 * 1.0 ) );
             vec3 ripple_dir = normalize( vec3(cos(ripple), sin(ripple), 1.0) );
 
-            float highlight = pow( abs( ripple ), 16.0 );
+            float highlight = mix( 1.0, pow( abs( ripple ), 16.0 ), time_ripple );
             //float alpha = ( texColor.a ) * mix( 0.5, 1.0, highlight );
             float alpha = pow( texColor.a, mix( 3.0, 1.0, highlight ) ) * mix( 0.125, 1.0, highlight );
             //float alpha = texColor.a; // pow( texColor.a, mix( 3.0, 1.0, highlight ) ) * mix( 0.25, 1.0, highlight );
@@ -60,6 +61,7 @@ var MriRender_Create = function (scene) {
                 uniforms: {
                     texture1: { value: texture },
                     time: { value: 0.0 },
+                    time_ripple: { value: 1.0 },
                     // cameraPosition: { value: new THREE.Vector3() }
                 },
                 vertexShader: vertexShader,
@@ -81,10 +83,15 @@ var MriRender_Create = function (scene) {
         var info = loadSlice(i);
         infos.push(info);
     }
-    return infos;
+    var runtime = {
+        infos: infos,
+        time_ripple: 1.0,
+    }
+    return runtime;
 }
 
-var MriRender_Update = function(infos) {
+var MriRender_Update = function(runtime) {
+    const infos = runtime.infos;
     const time = performance.now() * 0.001; // time in seconds
     const rate_of_time = 1.0;
     for (let info of infos) {
@@ -94,6 +101,7 @@ var MriRender_Update = function(infos) {
         info.time_previous = time;
         if (info.material) {
             info.material.uniforms.time.value = info.time_sum;
+            info.material.uniforms.time_ripple.value = runtime.time_ripple;
             // info.material.uniforms.cameraPosition.value.copy(camera.position);
         }
     }
