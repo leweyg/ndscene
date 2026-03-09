@@ -152,6 +152,9 @@
                 game.Render.Build ( scene );
 
                 mri_info = MriRender_Create( scene );
+                mri_info.redraw_callback = (() => {
+                    requestRedraw();
+                });
 
                 doTimeRippleChange = ((enabled) => {
                     mri_info.time_ripple = enabled ? 1.0 : 0.0;

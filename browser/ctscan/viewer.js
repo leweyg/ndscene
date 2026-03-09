@@ -56,6 +56,8 @@ var MriRender_Create = function (scene) {
         }
     `;
 
+    var textureRedrawCallback = (() => {});
+
     const loadSlice = function(index) {
         const imagePath = `./orange/slice_${index}.png`;
         const info = {
@@ -82,6 +84,7 @@ var MriRender_Create = function (scene) {
             object.scale.x = 4.0;
             object.scale.y = 4.0;
             scene.add( object );
+            textureRedrawCallback();
         });
         return info;
     };
@@ -94,7 +97,11 @@ var MriRender_Create = function (scene) {
     var runtime = {
         infos: infos,
         time_ripple: 1.0,
+        redraw_callback: (()=>{}),
     }
+    textureRedrawCallback = (() => {
+        runtime.redraw_callback();
+    });
     return runtime;
 }
 
