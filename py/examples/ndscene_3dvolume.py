@@ -2,12 +2,16 @@
 
 import imageio
 import numpy
+from scipy.ndimage import uniform_filter
 
 def main_processor():
     path_src = "browser/ctscan/orange_615.gif"
     
     original = imageio.v3.imread(path_src)
     print(original.shape) # (48, 615, 615, 3)
+
+    loop_frame_count = original.shape[0]
+    original = original[0:loop_frame_count//2, :, :, :]
 
     square_size = 512
     crop = center_crop(original, square_size)
@@ -28,6 +32,26 @@ def flood_fill_out(volume):
     
     # extract opacity channel and prepare fills array
     opacities = volume[:,:,:,1]
+
+    unit_opacity = opacities.astype(float) / 255.0
+    unit_opacity = uniform_filter(unit_opacity, size=7)
+    normals = numpy.gradient(unit_opacity)
+    normals = [numpy.expand_dims(n,axis=-1) for n in normals]
+    normals[0] = normals[0] / (float(volume.shape[1]) / float(volume.shape[0]))
+    normal_dirs = numpy.concat( normals, axis=-1 )
+    normal_len = numpy.linalg.norm(normal_dirs, axis=-1, keepdims=True)
+    normal_dirs = normal_dirs / normal_len
+    normal_dirs = ( ( normal_dirs * 0.5) + 0.5 )
+    normal_dirs = normal_dirs * 255.0
+
+    alphas = numpy.expand_dims(opacities, axis=-1)
+    volume = numpy.repeat( alphas, axis=-1, repeats=4)
+    volume[:,:,:,0] = normal_dirs[:,:,:,0]
+    volume[:,:,:,1] = normal_dirs[:,:,:,1]
+    volume[:,:,:,2] = normal_dirs[:,:,:,2]
+    volume[:,:,:,3] = alphas.squeeze()
+    return volume
+
     # we'll accumulate a running total in fills; start with zeros
     fills = numpy.zeros_like(opacities, dtype=numpy.int32)
     # compute the starting (center) voxel

@@ -8,9 +8,10 @@ var MriRender_Create = function (scene) {
     const textureLoader = new THREE.TextureLoader();
 
     const vertexShader = `
-        varying vec2 vUv;
+        varying vec3 vUVW;
         void main() {
-            vUv = uv;
+            vec4 objectInWorld = modelMatrix * vec4(position, 1.0);
+            vUVW = vec3( uv, objectInWorld.z / -48.14159 );
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
     `;
@@ -18,17 +19,31 @@ var MriRender_Create = function (scene) {
     const fragmentShader = `
         uniform sampler2D texture1;
         uniform float time;
-        varying vec2 vUv;
+        varying vec3 vUVW;
         void main() {
-            vec4 texColor = texture2D(texture1, vUv);
+            vec4 texColor = texture2D(texture1, vUVW.xy);
+
+            if (texColor.a < 0.05) discard;
             
-            float ripple_axis = -vUv.y; // - texColor.r; // up-down:  -vUv.y
-            float ripple = cos( ( time * 2.0 ) + (ripple_axis * 3.14159 * 1.0 ) );
-            float highlight = pow( abs( ripple ), 64.0 );
-            float alpha = ( texColor.g ) * mix( 0.25, 1.0, highlight );
-            float shade = texColor.g;
-            vec3 orange = vec3(1.0, 0.65, 0.0);
-            gl_FragColor = vec4(orange.r * shade, orange.g * shade, mix(orange.b * shade, 1.0, highlight), alpha);
+            vec3 one = vec3(1.0, 1.0, 1.0);
+            vec3 normal = ( texColor.rgb - ( one * 0.5 ) ) * 2.0;
+            normal = normalize(normal);
+
+            float ripple_axis = vUVW.z; // -vUv.y; // - texColor.g; // -vUv.y; // - texColor.r; // up-down:  -vUv.y
+            float ripple = cos( ( time * 1.0 ) + (ripple_axis * 3.14159 * 1.0 ) );
+            vec3 ripple_dir = normalize( vec3(cos(ripple), sin(ripple), 1.0) );
+
+            float highlight = pow( abs( ripple ), 16.0 );
+            //float alpha = ( texColor.a ) * mix( 0.5, 1.0, highlight );
+            float alpha = pow( texColor.a, mix( 3.0, 1.0, highlight ) ) * mix( 0.125, 1.0, highlight );
+            //float alpha = texColor.a; // pow( texColor.a, mix( 3.0, 1.0, highlight ) ) * mix( 0.25, 1.0, highlight );
+            float shade = alpha; //texColor.a;
+
+            vec3 orange = vec3(1.0, 0.61, 0.0);
+            vec3 lit = orange * shade;
+            // lit.b = mix( lit.b, 1.0, highlight );
+            
+            gl_FragColor = vec4(lit.r, lit.g, lit.b, alpha);
         }
     `;
 
@@ -44,7 +59,8 @@ var MriRender_Create = function (scene) {
             const material = new THREE.ShaderMaterial({
                 uniforms: {
                     texture1: { value: texture },
-                    time: { value: 0.0 }
+                    time: { value: 0.0 },
+                    // cameraPosition: { value: new THREE.Vector3() }
                 },
                 vertexShader: vertexShader,
                 fragmentShader: fragmentShader,
@@ -78,6 +94,7 @@ var MriRender_Update = function(infos) {
         info.time_previous = time;
         if (info.material) {
             info.material.uniforms.time.value = info.time_sum;
+            // info.material.uniforms.cameraPosition.value.copy(camera.position);
         }
     }
 }
