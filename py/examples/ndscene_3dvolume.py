@@ -26,16 +26,41 @@ def main_processor():
 
 def flood_fill_out(volume):
     
+    # extract opacity channel and prepare fills array
     opacities = volume[:,:,:,1]
-    fills = volume[:,:,:,0]
-    fills[:,:,:] = numpy.zeros_like(fills)
-    fills = fills.astype(int)
-    center_pos = fills.shape
-    center_pos = [center_pos[0]//2, center_pos[1]//2, center_pos[2]//2]
+    # we'll accumulate a running total in fills; start with zeros
+    fills = numpy.zeros_like(opacities, dtype=numpy.int32)
+    # compute the starting (center) voxel
+    center_pos = [fills.shape[0]//2, fills.shape[1]//2, fills.shape[2]//2]
 
+    # perform a breadth‑first flood fill from the center
+    from collections import deque
+    queue = deque()
+    cx, cy, cz = center_pos
+    fills[cx, cy, cz] = int(opacities[cx, cy, cz])
+    queue.append((cx, cy, cz))
 
-    extra_opacity = numpy.expand_dims( opacities, axis=-1)
-    volume = numpy.concat((volume,extra_opacity), axis=3)
+    # 6‑connected neighborhood (axis‑aligned)
+    neighbors = ((1,0,0),(-1,0,0),(0,1,0),(0,-1,0),(0,0,1),(0,0,-1))
+    print("Starting flood fill...")
+    while queue:
+        x, y, z = queue.popleft()
+        current_sum = fills[x, y, z]
+        for dx, dy, dz in neighbors:
+            nx, ny, nz = x + dx, y + dy, z + dz
+            if 0 <= nx < fills.shape[0] and 0 <= ny < fills.shape[1] and 0 <= nz < fills.shape[2]:
+                if fills[nx, ny, nz] == 0:
+                    # add neighbor's opacity to running total and mark it
+                    new_sum = current_sum + int(opacities[nx, ny, nz])
+                    fills[nx, ny, nz] = new_sum
+                    queue.append((nx, ny, nz))
+
+    print("Done flood fill...")
+    fills = ( fills / ( 256 * 1 ) ) % 256
+
+    # append an extra channel for convenience (not strictly needed)
+    extra_opacity = numpy.expand_dims(opacities, axis=-1)
+    volume = numpy.concatenate((volume, extra_opacity), axis=3)
     volume[:,:,:,0] = fills
     volume[:,:,:,1] = opacities
     volume[:,:,:,2] = opacities

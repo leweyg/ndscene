@@ -20,7 +20,7 @@ var MriRender_Create = function (scene) {
         varying vec2 vUv;
         void main() {
             vec4 texColor = texture2D(texture1, vUv);
-            gl_FragColor = vec4(texColor.rgb, texColor.g);
+            gl_FragColor = vec4(texColor.ggg, texColor.g);
         }
     `;
 
