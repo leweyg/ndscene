@@ -17,34 +17,58 @@ var MriRender_Create = function (scene) {
 
     const fragmentShader = `
         uniform sampler2D texture1;
+        uniform float time;
         varying vec2 vUv;
         void main() {
             vec4 texColor = texture2D(texture1, vUv);
-            gl_FragColor = vec4(texColor.ggg, texColor.g);
+            
+            float highlight = pow( max(0.0, cos( (time * 3.14159) + (texColor.r * 3.14159) ) ), 4.0 );
+            float alpha = ( texColor.g * 1.0 ) * mix( 0.25, 1.0, highlight );
+            float shade = texColor.g;
+            gl_FragColor = vec4(shade, shade, mix(shade, 1.0, highlight), alpha);
         }
     `;
 
     const loadSlice = function(index) {
         const imagePath = `./orange/slice_${index}.png`;
+        const info = {
+            material: null,
+            index: index,
+        }
         textureLoader.load(imagePath, function(texture) {
             const material = new THREE.ShaderMaterial({
                 uniforms: {
-                    texture1: { value: texture }
+                    texture1: { value: texture },
+                    time: { value: 0.0 }
                 },
                 vertexShader: vertexShader,
                 fragmentShader: fragmentShader,
                 transparent: true
             });
+            info.material = material;
             const object = new THREE.Mesh( geometry, material );
             object.position.z = index * 2.0; // Stack slices along z-axis with spacing
             object.scale.x = 4.0;
             object.scale.y = 4.0;
             scene.add( object );
         });
+        return info;
     };
 
+    var infos = [];
     for ( let i = 0; i < mri_layers; i ++ ) {
-        loadSlice(i);
+        var info = loadSlice(i);
+        infos.push(info);
+    }
+    return infos;
+}
+
+var MriRender_Update = function(infos) {
+    const time = performance.now() * 0.001; // time in seconds
+    for (let info of infos) {
+        if (info.material) {
+            info.material.uniforms.time.value = time;
+        }
     }
 }
 
