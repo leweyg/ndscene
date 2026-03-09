@@ -22,10 +22,13 @@ var MriRender_Create = function (scene) {
         void main() {
             vec4 texColor = texture2D(texture1, vUv);
             
-            float highlight = pow( max(0.0, cos( (time * 3.14159) + (texColor.r * 3.14159) ) ), 4.0 );
-            float alpha = ( texColor.g * 1.0 ) * mix( 0.25, 1.0, highlight );
+            float ripple_axis = -vUv.y; // - texColor.r; // up-down:  -vUv.y
+            float ripple = cos( ( time * 2.0 ) + (ripple_axis * 3.14159 * 1.0 ) );
+            float highlight = pow( abs( ripple ), 64.0 );
+            float alpha = ( texColor.g ) * mix( 0.25, 1.0, highlight );
             float shade = texColor.g;
-            gl_FragColor = vec4(shade, shade, mix(shade, 1.0, highlight), alpha);
+            vec3 orange = vec3(1.0, 0.65, 0.0);
+            gl_FragColor = vec4(orange.r * shade, orange.g * shade, mix(orange.b * shade, 1.0, highlight), alpha);
         }
     `;
 
@@ -34,6 +37,8 @@ var MriRender_Create = function (scene) {
         const info = {
             material: null,
             index: index,
+            time_previous: 0,
+            time_sum: 0,
         }
         textureLoader.load(imagePath, function(texture) {
             const material = new THREE.ShaderMaterial({
@@ -65,9 +70,14 @@ var MriRender_Create = function (scene) {
 
 var MriRender_Update = function(infos) {
     const time = performance.now() * 0.001; // time in seconds
+    const rate_of_time = 1.0;
     for (let info of infos) {
+        var dt = (time - info.time_previous);
+        dt = Math.min( dt, 1.0 / 60.0 );
+        info.time_sum += dt * rate_of_time;
+        info.time_previous = time;
         if (info.material) {
-            info.material.uniforms.time.value = time;
+            info.material.uniforms.time.value = info.time_sum;
         }
     }
 }
