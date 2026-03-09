@@ -34,7 +34,8 @@ def flood_fill_out(volume):
     opacities = volume[:,:,:,1]
 
     unit_opacity = opacities.astype(float) / 255.0
-    unit_opacity = uniform_filter(unit_opacity, size=7)
+    for layer_index in range(unit_opacity.shape[0]):
+        unit_opacity[layer_index] = uniform_filter(unit_opacity[layer_index], size=7)
     normals = numpy.gradient(unit_opacity)
     normals = [numpy.expand_dims(n,axis=-1) for n in normals]
     normals[0] = normals[0] / (float(volume.shape[1]) / float(volume.shape[0]))

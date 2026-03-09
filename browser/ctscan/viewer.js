@@ -9,8 +9,10 @@ var MriRender_Create = function (scene) {
 
     const vertexShader = `
         varying vec3 vUVW;
+        varying vec3 cameraDir;
         void main() {
             vec4 objectInWorld = modelMatrix * vec4(position, 1.0);
+            cameraDir = objectInWorld.xyz - cameraPosition;
             vUVW = vec3( uv, objectInWorld.z / -48.14159 );
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
@@ -21,6 +23,7 @@ var MriRender_Create = function (scene) {
         uniform float time;
         uniform float time_ripple;
         varying vec3 vUVW;
+        varying vec3 cameraDir;
         void main() {
             vec4 texColor = texture2D(texture1, vUVW.xy);
 
@@ -28,20 +31,25 @@ var MriRender_Create = function (scene) {
             
             vec3 one = vec3(1.0, 1.0, 1.0);
             vec3 normal = ( texColor.rgb - ( one * 0.5 ) ) * 2.0;
+            normal = normal.bgr * vec3(1.0, -1.0, 1.0);
             normal = normalize(normal);
+            float NDotV = dot(normalize(cameraDir), normal);
+            NDotV = mix( 0.25, 1.0, pow( abs(NDotV), 0.25 ) );
 
             float ripple_axis = vUVW.z; // -vUv.y; // - texColor.g; // -vUv.y; // - texColor.r; // up-down:  -vUv.y
             float ripple = cos( ( time * 1.0 ) + (ripple_axis * 3.14159 * 1.0 ) );
             vec3 ripple_dir = normalize( vec3(cos(ripple), sin(ripple), 1.0) );
 
-            float highlight = mix( 1.0, pow( abs( ripple ), 16.0 ), time_ripple );
+            float highlight = mix( 1.0, pow( abs( ripple ), 32.0 ), time_ripple );
             //float alpha = ( texColor.a ) * mix( 0.5, 1.0, highlight );
-            float alpha = pow( texColor.a, mix( 3.0, 1.0, highlight ) ) * mix( 0.125, 1.0, highlight );
+            float alpha = pow( texColor.a, mix( 3.0, 1.0, highlight ) ) * mix( 0.05, 1.0, highlight ); // * NDotV;
             //float alpha = texColor.a; // pow( texColor.a, mix( 3.0, 1.0, highlight ) ) * mix( 0.25, 1.0, highlight );
             float shade = alpha; //texColor.a;
 
             vec3 orange = vec3(1.0, 0.61, 0.0);
-            vec3 lit = orange * shade;
+            //vec3 lit = orange * shade;
+            //vec3 lit = abs(normal) * shade;
+            vec3 lit = orange * shade * abs( NDotV );
             // lit.b = mix( lit.b, 1.0, highlight );
             
             gl_FragColor = vec4(lit.r, lit.g, lit.b, alpha);
