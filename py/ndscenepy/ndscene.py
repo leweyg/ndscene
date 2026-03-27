@@ -3,6 +3,8 @@
 # NDScene { NDObject { NDTensor { NDData { tensor/compression/path } } } } 
 from typing import Callable
 
+ND_LOG_RENDER_ENABLED = False
+
 def NDTODO(desc=""):
     print("NDTODO:", desc)
     raise Exception("NDTODO:" + desc)
@@ -828,6 +830,8 @@ class NDLogRender:
     def __init__(self, render:"NDRender"):
         self.render = render
     def append(self, msg:str, val=None, node:NDObject=None):
+        if not ND_LOG_RENDER_ENABLED:
+            return
         print("NDLogRender:", msg, self.custom_str(val), node.name if node else "?")
     def custom_str(self, val=None):
         if (val is None):
