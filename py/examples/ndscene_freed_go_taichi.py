@@ -1,9 +1,6 @@
 
 # without install:
 import os
-# print("pwd=", os.getcwd())
-# import sys
-# sys.path.append(os.getcwd())
 
 print("Importing ndscene...")
 import ndscenepy.ndscene as ndscene
