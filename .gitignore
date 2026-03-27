@@ -7,3 +7,4 @@ py/tests/.results/*
 
 cpp/tests/test_app
 uv.lock
+py/ndscenepy.egg-info/*
