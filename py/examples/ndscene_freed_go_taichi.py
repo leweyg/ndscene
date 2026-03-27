@@ -11,6 +11,26 @@ print("Importing taichi...")
 import taichi 
 print("Starting...")
 
+_TAICHI_INITIALIZED = False
+
+
+def ensure_taichi_initialized():
+    global _TAICHI_INITIALIZED
+    if _TAICHI_INITIALIZED:
+        return
+
+    init_errors = []
+    for arch in (taichi.vulkan, taichi.metal):
+        try:
+            print(f"Initializing Taichi with arch={arch}...")
+            taichi.init(arch=arch)
+            _TAICHI_INITIALIZED = True
+            return
+        except Exception as exc:
+            init_errors.append(f"{arch}: {exc}")
+
+    raise RuntimeError("Unable to initialize Taichi. Tried: " + " | ".join(init_errors))
+
 def read_file_by_path(path):
     with open(path,"r") as file:
         return file.read()
@@ -58,7 +78,9 @@ class GoGameAppState:
         self.step_frames = 0
         self.frame_dt = 1.0 / 60.0
         self.accum_time = 0.0
-        self.gui = None
+        self.window = None
+        self.canvas = None
+        self.window_gui = None
         pass
     def main_redraw(self):
         self.img_tensor.fill_(0)
@@ -66,8 +88,11 @@ class GoGameAppState:
         pass
     def run_main_init(self):
         print("GoGameAppState: run_main_init")
+        ensure_taichi_initialized()
         sz = self.img_tensor.shape
-        self.gui = taichi.GUI("Freed Go", res=(sz[0], sz[1]))
+        self.window = taichi.ui.Window("Freed Go", res=(sz[0], sz[1]))
+        self.canvas = self.window.get_canvas()
+        self.window_gui = self.window.get_gui()
 
         self.main_loop()
         return
@@ -77,10 +102,9 @@ class GoGameAppState:
         frameIndex = 0
 
         def handle_input():
-            if self.gui.get_event(taichi.GUI.ESCAPE):
-                self.gui.running = False
-                # exit(0)
-            cursor_unit = self.gui.get_cursor_pos()
+            if self.window.get_event(taichi.ui.PRESS) and self.window.event.key == taichi.ui.ESCAPE:
+                self.window.running = False
+            cursor_unit = self.window.get_cursor_pos()
             cursor_unit = taichi.math.vec2(cursor_unit[0], cursor_unit[1])
             cursor_sunit = (cursor_unit * 2.0) - 1.0
 
@@ -94,13 +118,14 @@ class GoGameAppState:
             #cursor_now.from_numpy(numpy.array(cursor_state, dtype=numpy.float32))
             # print(cursor_now)
 
-        while self.gui.running:
+        while self.window.running:
             handle_input()
             self.main_redraw();
             #paint(i * 0.03 ); #, cursor_now)
-            self.gui.set_image(self.img_tensor.numpy())
-            self.gui.text("Some text", pos=(0, 0.5), color=0xffFFff)
-            self.gui.show()
+            self.canvas.set_image(self.img_tensor.numpy())
+            with self.window_gui.sub_window("Info", 0.02, 0.02, 0.2, 0.12) as gui:
+                gui.text("Some text", color=(1.0, 1.0, 1.0))
+            self.window.show()
             frameIndex += 1
     
         pass
@@ -155,4 +180,3 @@ def main_freed_go_test():
 
 if __name__ == "__main__":
     main_freed_go_test()
-
