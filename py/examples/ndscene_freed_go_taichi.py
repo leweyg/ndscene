@@ -32,19 +32,17 @@ def basic_pytorch3d_test():
     import imageio.v3 as imageio
     import torch
     from pytorch3d.renderer import (
-        AmbientLights,
         MeshRasterizer,
-        MeshRenderer,
         RasterizationSettings,
-        SoftPhongShader,
-        TexturesVertex,
         look_at_view_transform,
     )
+    from pytorch3d.ops import interpolate_face_attributes
     from pytorch3d.structures import Meshes
 
     print("Running basic PyTorch3D triangle test...")
-    device_name = "cpu" # "mps" # "cpu"
+    device_name = "cpu" # "mps" if torch.backends.mps.is_available() else "cpu"
     device = torch.device(device_name)
+    print(f"basic_pytorch3d_test using device={device_name}")
     image_size = 256
 
     verts = torch.tensor(
@@ -70,33 +68,39 @@ def basic_pytorch3d_test():
     mesh = Meshes(
         verts=[verts],
         faces=[faces],
-        textures=TexturesVertex(verts_features=[colors]),
     )
 
     R, T = look_at_view_transform(dist=2.5, elev=0.0, azim=0.0, device=device)
     cameras = pytorch3d.renderer.FoVPerspectiveCameras(R=R, T=T, device=device)
-    renderer = MeshRenderer(
-        rasterizer=MeshRasterizer(
-            cameras=cameras,
-            raster_settings=RasterizationSettings(
-                image_size=image_size,
-                blur_radius=0.0,
-                faces_per_pixel=1,
-            ),
-        ),
-        shader=SoftPhongShader(
-            device=device,
-            cameras=cameras,
-            lights=AmbientLights(device=device),
+    rasterizer = MeshRasterizer(
+        cameras=cameras,
+        raster_settings=RasterizationSettings(
+            image_size=image_size,
+            blur_radius=0.0,
+            faces_per_pixel=1,
         ),
     )
+    fragments = rasterizer(mesh)
+    image = torch.zeros((image_size, image_size, 3), dtype=torch.float32, device=device)
+    pix_to_face = fragments.pix_to_face[0, ..., 0]
+    visible = pix_to_face >= 0
+    if torch.any(visible):
+        face_vertex_colors = colors[faces]
+        sampled = interpolate_face_attributes(
+            fragments.pix_to_face,
+            fragments.bary_coords,
+            face_vertex_colors,
+        )[0, ..., 0, :]
+        image[visible] = sampled[visible]
 
-    image = renderer(mesh)[0, ..., :3].clamp(0.0, 1.0)
+    image = image.clamp(0.0, 1.0)
     image_u8 = (image * 255.0).round().to(dtype=torch.uint8).cpu().numpy()
 
-    output_path = Path(__file__).resolve().with_name("basic_pytorch3d_test.png")
-    imageio.imwrite(output_path, image_u8)
-    print(f"Saved basic PyTorch3D test image to {output_path}")
+    should_save_image = False
+    if should_save_image:
+        output_path = Path(__file__).resolve().with_name("basic_pytorch3d_test.png")
+        imageio.imwrite(output_path, image_u8)
+        print(f"Saved basic PyTorch3D test image to {output_path}")
 
     if os.environ.get("NDSCENE_SHOW_PYTORCH3D_TEST", "1") == "0":
         return image_u8
