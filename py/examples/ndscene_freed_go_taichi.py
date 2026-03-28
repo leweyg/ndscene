@@ -1,6 +1,8 @@
 
 # without install:
 import os
+import sys
+from pathlib import Path
 
 print("Importing ndscene...")
 import ndscenepy.ndscene as ndscene
@@ -10,6 +12,107 @@ print("Starting...")
 
 _TAICHI_INITIALIZED = False
 
+
+def ensure_pytorch3d_importable():
+    try:
+        import pytorch3d
+        return pytorch3d
+    except ImportError:
+        repo_root = Path(__file__).resolve().parents[2]
+        local_pkg_root = repo_root / "subgits" / "pytorch3d"
+        local_pkg_root_str = str(local_pkg_root)
+        if local_pkg_root.is_dir() and local_pkg_root_str not in sys.path:
+            sys.path.insert(0, local_pkg_root_str)
+        import pytorch3d
+        return pytorch3d
+
+
+def basic_pytorch3d_test():
+    pytorch3d = ensure_pytorch3d_importable()
+    import imageio.v3 as imageio
+    import torch
+    from pytorch3d.renderer import (
+        AmbientLights,
+        MeshRasterizer,
+        MeshRenderer,
+        RasterizationSettings,
+        SoftPhongShader,
+        TexturesVertex,
+        look_at_view_transform,
+    )
+    from pytorch3d.structures import Meshes
+
+    print("Running basic PyTorch3D triangle test...")
+    device_name = "cpu" # "mps" # "cpu"
+    device = torch.device(device_name)
+    image_size = 256
+
+    verts = torch.tensor(
+        [
+            [-0.8, -0.7, 0.0],
+            [0.0, 0.85, 0.0],
+            [0.8, -0.25, 0.0],
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+    faces = torch.tensor([[0, 1, 2]], dtype=torch.int64, device=device)
+    colors = torch.tensor(
+        [
+            [1.0, 0.2, 0.2],
+            [0.2, 1.0, 0.2],
+            [0.2, 0.4, 1.0],
+        ],
+        dtype=torch.float32,
+        device=device,
+    )
+
+    mesh = Meshes(
+        verts=[verts],
+        faces=[faces],
+        textures=TexturesVertex(verts_features=[colors]),
+    )
+
+    R, T = look_at_view_transform(dist=2.5, elev=0.0, azim=0.0, device=device)
+    cameras = pytorch3d.renderer.FoVPerspectiveCameras(R=R, T=T, device=device)
+    renderer = MeshRenderer(
+        rasterizer=MeshRasterizer(
+            cameras=cameras,
+            raster_settings=RasterizationSettings(
+                image_size=image_size,
+                blur_radius=0.0,
+                faces_per_pixel=1,
+            ),
+        ),
+        shader=SoftPhongShader(
+            device=device,
+            cameras=cameras,
+            lights=AmbientLights(device=device),
+        ),
+    )
+
+    image = renderer(mesh)[0, ..., :3].clamp(0.0, 1.0)
+    image_u8 = (image * 255.0).round().to(dtype=torch.uint8).cpu().numpy()
+
+    output_path = Path(__file__).resolve().with_name("basic_pytorch3d_test.png")
+    imageio.imwrite(output_path, image_u8)
+    print(f"Saved basic PyTorch3D test image to {output_path}")
+
+    if os.environ.get("NDSCENE_SHOW_PYTORCH3D_TEST", "1") == "0":
+        return image_u8
+
+    ensure_taichi_initialized()
+    window = taichi.ui.Window("PyTorch3D Triangle", res=(image_size, image_size))
+    canvas = window.get_canvas()
+    frame_count = 0
+    while window.running and frame_count < 120:
+        if window.get_event(taichi.ui.PRESS) and window.event.key == taichi.ui.ESCAPE:
+            break
+        canvas.set_image(image_u8)
+        window.show()
+        frame_count += 1
+
+    return image_u8
 
 def ensure_taichi_initialized():
     global _TAICHI_INITIALIZED
@@ -129,6 +232,7 @@ class GoGameAppState:
 
 def main_freed_go_test():
     print("Main Freed Go test...")
+    basic_pytorch3d_test()
     voxel_scene = ndscene.NDJson.scene_from_path("../json/freed_go/voxels.json")
     voxels = voxel_scene.root.child_find('voxels')
     voxel_data = voxels.child_find('voxel_data')

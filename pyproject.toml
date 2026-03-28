@@ -10,7 +10,9 @@ dependencies = [
     "numpy>=2.2.4,<2.3",
     "scipy>=1.15.2,<1.16",
     "taichi>=1.7.4",
-    "torch>=2.1,<2.5",
+    "pytorch3d",
+    "torch==2.4.1",
+    "torchvision==0.19.1",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +22,10 @@ mesh = [
 
 [tool.uv.sources]
 ndscenepy = { workspace = true }
+pytorch3d = { path = "subgits/pytorch3d" }
+
+[tool.uv.extra-build-dependencies]
+pytorch3d = ["torch==2.4.1"]
 
 [tool.uv.workspace]
 members = ["py"]

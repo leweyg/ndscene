@@ -12,7 +12,7 @@ dependencies = [
     "imageio>=2.37.2",
     "numpy>=2.2.4,<2.3",
     "scipy>=1.15.2,<1.16",
-    "torch>=2.1,<2.5",
+    "torch==2.4.1",
 ]
 
 [project.optional-dependencies]
