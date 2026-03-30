@@ -62,7 +62,21 @@ class NdSceneTypeRegistry {
 class NdSceneNodeElement extends HTMLElement {
   constructor() {
     super();
-    this.className = "ndscene-node";
+    this._initialized = false;
+    this.expandable = false;
+    this.expanded = true;
+  }
+
+  connectedCallback() {
+    this.ensureInitialized();
+  }
+
+  ensureInitialized() {
+    if (this._initialized) {
+      return;
+    }
+
+    this.classList.add("ndscene-node");
 
     this.rowElement = createElement("div", "ndscene-row");
     this.toggleButton = createElement("button", "ndscene-toggle", "−");
@@ -87,11 +101,11 @@ class NdSceneNodeElement extends HTMLElement {
     );
 
     this.append(this.rowElement, this.childrenElement);
-    this.expandable = false;
-    this.expanded = true;
+    this._initialized = true;
   }
 
   setMeta({ label, kind, summary, valueText, valueType, expandable, expanded }) {
+    this.ensureInitialized();
     this.keyElement.textContent = label;
     this.kindElement.textContent = kind;
     this.summaryElement.textContent = summary || "";
@@ -104,10 +118,12 @@ class NdSceneNodeElement extends HTMLElement {
   }
 
   setChildren(children) {
+    this.ensureInitialized();
     this.childrenElement.replaceChildren(...children);
   }
 
   updateExpandedState() {
+    this.ensureInitialized();
     this.toggleButton.textContent = this.expandable ? (this.expanded ? "−" : "+") : "·";
     this.childrenElement.hidden = !this.expandable || !this.expanded;
   }
