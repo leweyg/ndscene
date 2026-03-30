@@ -19,13 +19,78 @@ function describeValueKind(value) {
   return typeof value;
 }
 
-function summarizeStructuredValue(value) {
+function summarizeShapeValue(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => summarizeShapeValue(entry)).join(", ")}]`;
+  }
+  if (typeof value === "number") {
+    return `${value}`;
+  }
+  if (!value || typeof value !== "object") {
+    return String(value);
+  }
+
+  const name = value.name || value.key || "";
+  const size = value.size !== undefined ? `x${value.size}` : "";
+  const dtype = value.dtype ? `<${value.dtype}>` : "";
+  const childShape = Array.isArray(value.shape) && value.shape.length > 0
+    ? summarizeShapeValue(value.shape)
+    : "";
+  const dataTag = value.data !== undefined ? " =data" : "";
+
+  return `${name}${size}${dtype}${childShape}${dataTag}`.trim() || "{}";
+}
+
+function summarizeStructuredValue(label, value) {
+  if (label === "shape") {
+    return summarizeShapeValue(value);
+  }
   if (Array.isArray(value)) {
     return `${value.length} item${value.length === 1 ? "" : "s"}`;
   }
   if (value && typeof value === "object") {
     const keys = Object.keys(value);
-    return `${keys.length} key${keys.length === 1 ? "" : "s"}`;
+    let base = "";
+    if ("name" in value) {
+      base += ` "${value.name}" `;
+    } else if ("key" in value) {
+      base += ` "${value.key}" `;
+    }
+    var hasShape = false;
+    if ("shape" in value) {
+      const shapeValue = value['shape'];
+      const shapeText = summarizeShapeValue(shapeValue);
+      base += ` ${shapeText}`
+      hasShape = true;
+    }
+    if ("dtype" in value) {
+      const dtypeText = value['dtype'].toString();
+      base += ` <${dtypeText}>`
+    }
+    if ("data" in value) {
+      base += ` (data)`;
+    }
+    if ("children" in value) {
+      const childrenValue = value['children'];
+      base += ` {${childrenValue.length}c}`;
+      hasShape = true;
+    }
+    if ("pose" in value) {
+      base += ` *pose`;
+      hasShape = true;
+    }
+    if ("unpose" in value) {
+      base += ` *unpose`;
+      hasShape = true;
+    }
+    if (!hasShape) {
+      if (keys.length == 0) {
+        base += " { }"
+      } else {
+        base += ` {.${keys.length}}`;
+      }
+    }
+    return base;
   }
   return String(value);
 }
@@ -190,7 +255,7 @@ function renderArrayNode(context, registry) {
   node.setMeta({
     label: context.label,
     kind: "array",
-    summary: summarizeStructuredValue(context.value),
+    summary: summarizeStructuredValue(context.label, context.value),
     expandable: true,
     expanded: context.depth < 2,
   });
@@ -213,7 +278,7 @@ function renderObjectNode(context, registry) {
   node.setMeta({
     label: context.label,
     kind: "object",
-    summary: summarizeStructuredValue(context.value),
+    summary: summarizeStructuredValue(context.label, context.value),
     expandable: true,
     expanded: context.depth < 1,
   });
