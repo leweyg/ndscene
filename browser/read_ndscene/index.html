@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ndscene reader</title>
+    <style>
+      :root {
+        --page-bg: #f3efe6;
+        --panel-bg: rgba(255, 252, 246, 0.92);
+        --panel-border: #d4c5a5;
+        --panel-shadow: rgba(93, 67, 27, 0.12);
+        --text-main: #2c2418;
+        --text-muted: #75664b;
+        --accent: #9d5f1b;
+        --accent-soft: #eed9bb;
+        --tree-line: rgba(137, 106, 58, 0.22);
+        --leaf-string: #17624a;
+        --leaf-number: #175d84;
+        --leaf-boolean: #7e2752;
+        --leaf-null: #6a6181;
+        --code-bg: rgba(250, 245, 235, 0.95);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(255, 241, 213, 0.85), transparent 28rem),
+          linear-gradient(180deg, #f8f4ec 0%, var(--page-bg) 100%);
+        color: var(--text-main);
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+      }
+
+      .page-shell {
+        width: min(1100px, calc(100vw - 2rem));
+        margin: 0 auto;
+        padding: 1.5rem 0 2rem;
+      }
+
+      .hero {
+        margin-bottom: 1rem;
+        padding: 1.25rem 1.25rem 1rem;
+        border: 1px solid var(--panel-border);
+        border-radius: 1.2rem;
+        background: var(--panel-bg);
+        box-shadow: 0 0.6rem 1.8rem var(--panel-shadow);
+      }
+
+      .hero h1 {
+        margin: 0;
+        font-size: clamp(1.8rem, 3vw, 2.6rem);
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+
+      .hero p {
+        margin: 0.4rem 0 0;
+        color: var(--text-muted);
+        font-size: 1rem;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.8rem;
+        margin-top: 1rem;
+      }
+
+      .path-input {
+        width: 100%;
+        padding: 0.9rem 1rem;
+        border: 1px solid var(--panel-border);
+        border-radius: 0.9rem;
+        background: white;
+        color: var(--text-main);
+        font: inherit;
+      }
+
+      .load-button {
+        padding: 0.9rem 1.15rem;
+        border: 0;
+        border-radius: 0.9rem;
+        background: linear-gradient(180deg, #b56c24 0%, #8d5318 100%);
+        color: white;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .meta-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1rem;
+        margin-top: 0.9rem;
+        color: var(--text-muted);
+        font-size: 0.96rem;
+      }
+
+      .meta-chip {
+        padding: 0.35rem 0.7rem;
+        border: 1px solid var(--panel-border);
+        border-radius: 999px;
+        background: rgba(255, 249, 239, 0.85);
+      }
+
+      .tree-panel {
+        padding: 1rem;
+        border: 1px solid var(--panel-border);
+        border-radius: 1.2rem;
+        background: var(--panel-bg);
+        box-shadow: 0 0.6rem 1.8rem var(--panel-shadow);
+      }
+
+      .status-banner {
+        margin-bottom: 1rem;
+        padding: 0.8rem 1rem;
+        border-radius: 0.9rem;
+        background: var(--accent-soft);
+        color: var(--text-main);
+      }
+
+      .status-banner[data-state="error"] {
+        background: #f6d8d5;
+        color: #651f17;
+      }
+
+      .status-banner[data-state="ready"] {
+        background: #ddebd9;
+        color: #234619;
+      }
+
+      ndscene-tree,
+      ndscene-node {
+        display: block;
+      }
+
+      .ndscene-node {
+        position: relative;
+        margin-left: 0.35rem;
+        padding-left: 1rem;
+      }
+
+      .ndscene-node::before {
+        content: "";
+        position: absolute;
+        top: 0.15rem;
+        bottom: 0.15rem;
+        left: 0.15rem;
+        border-left: 1px solid var(--tree-line);
+      }
+
+      .ndscene-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.45rem;
+        padding: 0.24rem 0;
+        line-height: 1.45;
+      }
+
+      .ndscene-toggle {
+        width: 1.25rem;
+        min-width: 1.25rem;
+        height: 1.25rem;
+        margin-top: 0.05rem;
+        border: 0;
+        border-radius: 0.5rem;
+        background: rgba(217, 193, 150, 0.38);
+        color: var(--text-main);
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .ndscene-toggle[data-empty="true"] {
+        visibility: hidden;
+      }
+
+      .ndscene-key {
+        min-width: 7rem;
+        color: var(--accent);
+        font-weight: 700;
+        word-break: break-word;
+      }
+
+      .ndscene-kind {
+        padding: 0.08rem 0.42rem;
+        border-radius: 999px;
+        background: rgba(212, 197, 165, 0.38);
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      .ndscene-summary,
+      .ndscene-value {
+        min-width: 0;
+        color: var(--text-main);
+        word-break: break-word;
+      }
+
+      .ndscene-value[data-value-type="string"] {
+        color: var(--leaf-string);
+      }
+
+      .ndscene-value[data-value-type="number"] {
+        color: var(--leaf-number);
+      }
+
+      .ndscene-value[data-value-type="boolean"] {
+        color: var(--leaf-boolean);
+      }
+
+      .ndscene-value[data-value-type="null"] {
+        color: var(--leaf-null);
+      }
+
+      .ndscene-children[hidden] {
+        display: none;
+      }
+
+      .empty-state {
+        padding: 1.2rem;
+        border-radius: 0.9rem;
+        background: var(--code-bg);
+        color: var(--text-muted);
+      }
+
+      code {
+        padding: 0.12rem 0.35rem;
+        border-radius: 0.35rem;
+        background: var(--code-bg);
+        font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+        font-size: 0.92em;
+      }
+
+      @media (max-width: 720px) {
+        .page-shell {
+          width: min(100vw - 1rem, 1100px);
+          padding-top: 0.75rem;
+        }
+
+        .controls {
+          grid-template-columns: 1fr;
+        }
+
+        .ndscene-row {
+          flex-wrap: wrap;
+        }
+
+        .ndscene-key {
+          min-width: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="hero">
+        <h1>ndscene reader</h1>
+        <p>Static JSON tree viewer for ndscene files. Load a file with <code>?path=...</code>.</p>
+
+        <form id="path-form" class="controls">
+          <input
+            id="path-input"
+            class="path-input"
+            name="path"
+            type="text"
+            spellcheck="false"
+            placeholder="../../json/freed_go/view_1_scene.json"
+          >
+          <button class="load-button" type="submit">Load JSON</button>
+        </form>
+
+        <div class="meta-row">
+          <div class="meta-chip">Query key: <code>path</code></div>
+          <div class="meta-chip">Static-host friendly</div>
+          <div class="meta-chip" id="resolved-path-chip">No file loaded yet</div>
+        </div>
+      </section>
+
+      <section class="tree-panel">
+        <div id="status-banner" class="status-banner" data-state="idle">
+          Waiting for a JSON file path.
+        </div>
+        <ndscene-tree id="scene-tree"></ndscene-tree>
+      </section>
+    </main>
+
+    <script type="module" src="./page.js"></script>
+  </body>
+</html>
