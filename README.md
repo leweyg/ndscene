@@ -8,7 +8,7 @@ n-dimensional scene-graph runtime and format; allowing AI vision models to be ex
 ## The N-Dimensional Engine Stack
 
 * Streams of Packets: Generally with stream names, MIME format, byte buffers, usually decoded into nested tensors."
-    * <code>class NDData : { path: str, format: str, buffer: bytes, <span style='color: blue;'>tensor: ndarray|pytorch.Tensor</span>, on_updating, on_updated, on_closing }</code>
+    * <code>class NDData : { path: str, format: str, buffer: bytes, <span style='color: blue;'>tensor: ndarray|pytorch.Tensor</span> }</code>
     * Basically fetch/file decoding.
 * Heiarchial Tensor Structured Content: recursive tensors can be used to nest data like a JSON with native-tensors.
     *  <code>class NDTensor : { key: str, size: int, <span style='color: blue;'>shape: [NDTensor],</span> dtype: str, data: NDData }</code>
@@ -16,10 +16,10 @@ n-dimensional scene-graph runtime and format; allowing AI vision models to be ex
 * Relationally-Transformed Objects: from spatial relationships to encode/decode networks as expressable as cacheable bi-directional graph from local to parent space:
     *  `class NDObject : { name:str, content:tensor, pose:tensor, unpose:tensor, parents:[NDObject], children:[NDObject] }`
     * Mathematically: <code><span style='color: blue;'>value = pose * content</span> | concat( pose * children, unpose * parents )</code>
+    * Database: `CREATE TABLE NDObjectVersion ( version_id, object_id, scene_commit_id, state: NDObject, version_patch_parent? )`
 * Scenes as Moments: A particular moment of objects, data caches, and method groups, often an version/instance on a timeline*
-    * <code>class ndScene : { <span style='color: blue;'>root: NDObject</span>, objects:dict<str,NDObject>, tensors:<dict,NDTensor>, data:dict<str,NDData>, methods:dict<str,NDMethod>}</code>
-    * `CREATE TABLE NDObjectVersion ( version_id, object_id, scene_commit_id, state: NDObject, version_patch_parent? )`
-    * `CREATE TABLE NDSceneCommit( scene_commit_id, packet_data )` updates multiple objects.
+    * <code>class NDScene : { <span style='color: blue;'>root: NDObject</span>, objects:dict<str,NDObject>, tensors:<dict,NDTensor>, data:dict<str,NDData>, methods:dict<str,NDMethod>}</code>
+    * `CREATE TABLE NDSceneCommit( scene_id, scene_commit_id, packet_data )` updates multiple objects.
 * Updates as Model Inferences: Using a stack-style linearization of the graph walk we convert the updating of a scene element to an inference model format.*
     * `class NDRender:`
     * `ndAddModels(dict<str,callback>)`
@@ -33,13 +33,14 @@ n-dimensional scene-graph runtime and format; allowing AI vision models to be ex
 * Labelled Model Data for Training*
     * `CREATE TABLE NDModelLabel ( Model:STR_ID, event_id:STR_ID, context: NDSceneCommit, input: NDSceneCommit, label: NDSceneCommit )`
     * Recorded model inputs and target layouts, along with modelling loss as the item being updates.
-* Model Updating via Training / Coding: *
-
+* Review Labelling Interface *
+    * `NDEditor { view:NDSceneCommit, labels:range<NDModelLabel>, }` provides a visual review and editting/labelling interface to the database of commits (including UI state).*
 
 ## Abstract
 
+* At the top level the two main activities of an engine are inferring scene-graph updates based on streamed inputs, and building a collection of reviewable and labelable training data.
 * Pose/Unpose (NDTensor) is used to pose data into it's parent space, or unpose it back into it's child/data space. I.e. you can transform filtered dictionaries of tensors using matrix multiplication (default), listed sequences of steps, or with an extensible set of standard transforms (append_ones, projection, index_to_). Inversion/"unpose" is used to support optimization and target relative transforms such as viewport encoding.
-* Data/media (NDData) behind tensors can be progressivly transitioned between native-tensored, buffered, mime-compressed and remote-pathed states. Allowing natural integration of standard image, video, zip and other compression schemes.
+* Data/media (NDData) behind tensors can be progressivly transitioned between remote-paths, buffers, and native-tensors. Allowing natural integration of standard image, video, zip and other compression schemes.
 * Streaming is achieved via scene patches/updates, including scenes which are themselves queries for additional content, and which generally leverage a secondary path-based file/shared-memory system for same-device or cacheable content.
 * "Hardware Acceleration" (NDTorch) is achieved via PyTorch which is required for rendering (with CPU fallback), but optional for basic scene-graph file-IO.
 
