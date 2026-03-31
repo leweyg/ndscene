@@ -7,21 +7,33 @@ n-dimensional scene-graph runtime and format; allowing AI vision models to be ex
 
 ## The N-Dimensional Engine Stack
 
-* Nested/Recursive Tensors: supports dictionaries of tensors, and transforms on shape dimenions.
-    * `{ "vertices":{"shape":[8,3],"data":[1.0,0.0,1.0,...],`
-    * `"indices":{"shape":[12,3],"dtype":"uint16","data":[0,2,1,...],`
-    * `"colors":{"shape":[8,3],"dtype":"float","data":[0.5,1.0,0.5,...]}`
-* Scene Graph: there are three main uses of scene-graphs:
-    * Expressing connected views of a scene (cameras, sensors, poses, actuators, etc.): `node : { name:str, pose:tensor, data:tensor, children:[node] }`
-    * Breaking up large content into sub-elements/tiles: `node.value() : node.pose * concat( node.data, c.value() for c in node.children )`
-    * Updating the view from a 'camera/viewer' node: `node.update() : node.data = concat(c.unpose for c in node.parents_to_root()) * root.value()` 
-* Models / Transform Stacks / Rendering (NDRender): provides unified push and pull tensor processing semanics
+* Streams of Packets: Generally with stream names, MIME format, byte buffers, usually decoded into nested tensors."
+    * <code>class NDData : { path: str, format: str, buffer: bytes, <span style='color: blue;'>tensor: ndarray|pytorch.Tensor</span>, on_updating, on_updated, on_closing }</code>
+    * Basically fetch/file decoding.
+* Heiarchial Tensor Structured Content: recursive tensors can be used to nest data like a JSON with native-tensors.
+    *  <code>class NDTensor : { key: str, size: int, <span style='color: blue;'>shape: [NDTensor],</span> dtype: str, data: NDData }</code>
+    * Recursive `shape` allows expression of data heiarchy, not possible with just <code><span style='color: red;'>shape:[int]</span></code> that native tensors use.
+* Relationally-Transformed Objects: from spatial relationships to encode/decode networks as expressable as cacheable bi-directional graph from local to parent space:
+    *  `class NDObject : { name:str, content:tensor, pose:tensor, unpose:tensor, parents:[NDObject], children:[NDObject] }`
+    * Mathematically: <code><span style='color: blue;'>value = pose * content</span> | concat( pose * children, unpose * parents )</code>
+* Scenes as Moments: A particular moment of objects, data caches, and method groups, often an version/instance on a timeline*
+    * <code>class ndScene : { <span style='color: blue;'>root: NDObject</span>, objects:dict<str,NDObject>, tensors:<dict,NDTensor>, data:dict<str,NDData>, methods:dict<str,NDMethod>}</code>
+    * `CREATE TABLE NDObjectVersion ( version_id, object_id, scene_commit_id, state: NDObject, version_patch_parent? )`
+    * `CREATE TABLE NDSceneCommit( scene_commit_id, packet_data )` updates multiple objects.
+* Updates as Model Inferences: Using a stack-style linearization of the graph walk we convert the updating of a scene element to an inference model format.*
+    * `class NDRender:`
+    * `ndAddModels(dict<str,callback>)`
+    * <code><span style='color: blue;'>ndUpdateObjectInScene(obj:NDObject,scene:NDScene)</span></code>
     * `ndBegin(target)`
     * `ndPush(pose-encoder,unpose-decoder)` # push a transform or inverse-transform onto the stack
     * `ndConcat(data)` # append this data transformed by current pose stack
     * `ndPop()` # pop an item from the transform stack
     * `ndEnd()` # return the 
-    * Compiles to 
+    * Returns a model which can then be run/trained to update the target from the posed input data.
+* Labelled Model Data for Training*
+    * `CREATE TABLE NDModelLabel ( Model:STR_ID, event_id:STR_ID, context: NDSceneCommit, input: NDSceneCommit, label: NDSceneCommit )`
+    * Recorded model inputs and target layouts, along with modelling loss as the item being updates.
+* Model Updating via Training / Coding: *
 
 
 ## Abstract
