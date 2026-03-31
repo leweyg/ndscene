@@ -6,6 +6,7 @@ cd ../
 # core tests
 echo "Core Tests..."
 python3 -m tests.ndscene_tests
+python3 -m tests.ndscenesql_tests
 python3 -m tests.ndscene_glyph_test
 
 
@@ -13,5 +14,4 @@ python3 -m tests.ndscene_glyph_test
 echo "PyTorch/ImageIO tests..."
 python3 -m tests.ndscene_torch_tests
 python3 -m tests.ndscene_torch_imageio
-
 

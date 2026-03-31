@@ -20,5 +20,8 @@ mesh = [
     "pytorch3d",
 ]
 
+[project.scripts]
+ndscene-sql-write-example-db = "ndscenesql.ndscenesql:main"
+
 [tool.setuptools]
-packages = ["ndscenepy"]
+packages = ["ndscenepy", "ndscenesql", "tests", "examples"]
