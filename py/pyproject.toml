@@ -25,3 +25,6 @@ ndscene-sql-write-example-db = "ndscenesql.ndscenesql:main"
 
 [tool.setuptools]
 packages = ["ndscenepy", "ndscenesql", "tests", "examples"]
+
+[tool.setuptools.package-data]
+ndscenesql = ["schema.sql"]
