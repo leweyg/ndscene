@@ -7,34 +7,17 @@ n-dimensional scene-graph runtime and format; allowing AI vision models to be ex
 
 ## The N-Dimensional Engine Stack
 
-* Streams of Packets: Generally with stream names, MIME format, byte buffers, usually decoded into nested tensors."
-    * <code>class NDData : { path: str, format: str, buffer: bytes, <span style='color: blue;'>tensor: ndarray|pytorch.Tensor</span> }</code>
-    * Basically fetch/file decoding.
-* Heiarchial Tensor Structured Content: recursive tensors can be used to nest data like a JSON with native-tensors.
-    *  <code>class NDTensor : { key: str, size: int, <span style='color: blue;'>shape: [NDTensor],</span> dtype: str, data: NDData }</code>
-    * Recursive `shape` allows expression of data heiarchy, not possible with just <code><span style='color: red;'>shape:[int]</span></code> that native tensors use.
-* Relationally-Transformed Objects: from spatial relationships to encode/decode networks as expressable as cacheable bi-directional graph from local to parent space:
-    *  `class NDObject : { name:str, content:tensor, pose:tensor, unpose:tensor, parents:[NDObject], children:[NDObject] }`
-    * Mathematically: <code><span style='color: blue;'>value = pose * content</span> | concat( pose * children, unpose * parents )</code>
-    * Database: `CREATE TABLE NDObjectVersion ( version_id, object_id, scene_commit_id, state: NDObject, version_patch_parent? )`
-* Scenes as Moments: A particular moment of objects, data caches, and method groups, often an version/instance on a timeline*
-    * <code>class NDScene : { <span style='color: blue;'>root: NDObject</span>, objects:dict<str,NDObject>, tensors:<dict,NDTensor>, data:dict<str,NDData>, methods:dict<str,NDMethod>}</code>
-    * `CREATE TABLE NDSceneCommit( scene_id, scene_commit_id, packet_data )` updates multiple objects.
-* Updates as Model Inferences: Using a stack-style linearization of the graph walk we convert the updating of a scene element to an inference model format.*
-    * `class NDRender:`
-    * `ndAddModels(dict<str,callback>)`
-    * <code><span style='color: blue;'>ndUpdateObjectInScene(obj:NDObject,scene:NDScene)</span></code>
-    * `ndBegin(target)`
-    * `ndPush(pose-encoder,unpose-decoder)` # push a transform or inverse-transform onto the stack
-    * `ndConcat(data)` # append this data transformed by current pose stack
-    * `ndPop()` # pop an item from the transform stack
-    * `ndEnd()` # return the 
-    * Returns a model which can then be run/trained to update the target from the posed input data.
-* Labelled Model Data for Training*
-    * `CREATE TABLE NDModelLabel ( Model:STR_ID, event_id:STR_ID, context: NDSceneCommit, input: NDSceneCommit, label: NDSceneCommit )`
-    * Recorded model inputs and target layouts, along with modelling loss as the item being updates.
-* Review Labelling Interface *
-    * `NDEditor { view:NDSceneCommit, labels:range<NDModelLabel>, }` provides a visual review and editting/labelling interface to the database of commits (including UI state).*
+
+| Name                                    | Description                                                                                                                                                     | Code Definition                                                                                                                                               | DB Representation                                                                                                                                                                                                                                                                                   |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Streams of Packets**                  | Raw byte/file/stream layer. Holds named packet data with format metadata and optionally decoded tensor content.                                                 | <code>class NDData: path: str, format: str, buffer: bytes, tensor: ndarray</code>                                                            | <code>NDDataBlob( data_id, path, format, buffer, tensor_cache_ref )</code>                                                                                                                                                                                                                          |
+| **Tensor Structured Content**           | Hierarchical tensor-content layer. Represents nested tensor structures with recursive shape/content relationships beyond flat native tensor shapes.             | <code>class NDTensor: key: str, size: int, shape: list[NDTensor], dtype: str, data: NDData</code>                                                             | <code>NDTensorVersion( tensor_id, tensor_version_id, key, size, dtype, data_id, shape_patch_parent )</code><br><code>NDTensorShapeEdge( tensor_version_id, child_tensor_version_id, ordinal )</code>                                                                                                |
+| **Object Transform-Graph** | Object/scene-graph layer. Represents content in local and parent-relative spaces using pose/unpose relationships across parent/child object links.              | <code>class NDObject: name: str, content: tensor, pose: tensor, unpose: tensor, parents: list[NDObject], children: list[NDObject]</code>                      | <code>NDObjectVersion( version_id, object_id, scene_commit_id, state, version_patch_parent )</code><br><code>NDObjectEdge( object_version_id, related_object_version_id, relation_type, ordinal )</code>                                                                                            |
+| **Packets as Scenes Commits**           | Scene snapshot / commit layer. Collects objects, tensors, data, and methods into a versioned scene state that can be updated by internal or external packets.   | <code>class NDScene: root: NDObject, objects: dict[str, NDObject], tensors: dict[str, NDTensor], data: dict[str, NDData], methods: dict[str, NDMethod]</code> | <code>NDSceneCommit( scene_id, scene_commit_id, packet_data, is_external )</code><br><code>NDSceneCommitObject( scene_commit_id, object_version_id )</code><br><code>NDSceneCommitTensor( scene_commit_id, tensor_version_id )</code><br><code>NDSceneCommitData( scene_commit_id, data_id )</code> |
+| **Updates as Model Inferences**         | Inference/update execution layer. Linearizes graph-relative scene updates into a stack-based model input/output process for rendering, prediction, or training. | <code>class NDRender: ndTarget(obj) ndPush(pose,unpose), ndConcat(content), ndPop(), ndTargetModel(), ndTargetUpdate() </code>                                                                                                                                   | <code>NDInferenceEvent( event_id, model_id, target_object_id, scene_commit_id, input_commit_id, output_commit_id )</code><br><code>NDInferenceTrace( event_id, op_index, op_type, op_data )</code>                                                                                                  |
+| **Labelled Model Data for Training**    | Supervised training record layer. Stores model events with context, input, and target scene commits for learning and replay.                                    | <code>class NDModelLabel: Model: STR_ID, event_id: STR_ID, context: NDSceneCommit, input: NDSceneCommit, label: NDSceneCommit</code>                          | <code>NDModelLabel( model_id, event_id, context_commit_id, input_commit_id, label_commit_id )</code>                                                                                                                                                                                                |
+| **Review Labelling Interface**          | Human review and editing layer. Provides commit inspection and label editing over recorded model/training data.                                                 | <code>class NDEditor: view_commits: NDSceneCommit, labels: range[NDModelLabel]</code>                                                                         | <code>NDEditSession( session_id, user_id, view_commit_id, label_range_start, label_range_end, ui_state )</code>                                                                                                                                                                                     |
+
 
 ## Abstract
 
