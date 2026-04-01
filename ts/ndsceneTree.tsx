@@ -52,6 +52,8 @@ export function summarizeStructuredValue(label: string, value: unknown): string 
       base += ` "${record.name}" `;
     } else if (typeof record.key === "string") {
       base += ` "${record.key}" `;
+    } else if (typeof record.object_id === "string") {
+      base += ` "${record.object_id}" `;
     }
     if ("shape" in record) {
       base += ` ${summarizeShapeValue(record.shape)}`;
@@ -63,15 +65,19 @@ export function summarizeStructuredValue(label: string, value: unknown): string 
     if ("data" in record) {
       base += " (data)";
     }
+    if (record["content_tensor_version_id"]) {
+      base += " (content)";
+      hasShape = true;
+    }
     if (Array.isArray(record.children)) {
       base += ` {${record.children.length}c}`;
       hasShape = true;
     }
-    if ("pose" in record) {
+    if (("pose" in record) || (record["pose_tensor_version_id"])) {
       base += " *pose";
       hasShape = true;
     }
-    if ("unpose" in record) {
+    if (("unpose" in record) || (record["unpose_tensor_version_id"])) {
       base += " *unpose";
       hasShape = true;
     }
