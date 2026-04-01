@@ -179,7 +179,6 @@ def get_commit(scene_commit_id: str):
         "detail": {
             "commit": _normalize_row(detail["commit"]),
             "objects": [_normalize_row(row) for row in detail["objects"]],
-            "object_edges": [_normalize_row(row) for row in detail["object_edges"]],
             "object_graph": [_normalize_row(row) for row in detail["object_graph"]],
             "tensors": [_normalize_row(row) for row in detail["tensors"]],
             "data": [_normalize_row(row) for row in detail["data"]],

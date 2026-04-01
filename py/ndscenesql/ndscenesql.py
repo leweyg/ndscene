@@ -254,7 +254,12 @@ class NDSceneSQLClient:
         )
         return data_id
 
-    def _persist_tensor(self, tensor: Optional[NDTensor], scene_commit_id: Optional[str] = None):
+    def _persist_tensor(
+        self,
+        tensor: Optional[NDTensor],
+        scene_commit_id: Optional[str] = None,
+        parent_tensor_id: Optional[str] = None,
+    ):
         if tensor is None:
             return None
         if not isinstance(tensor, NDTensor):
@@ -268,47 +273,50 @@ class NDSceneSQLClient:
                     data=NDData(buffer=payload_json.encode("utf-8"), format="application/json"),
                 )
 
+        tensor_identity_payload = {
+            "key": tensor.key,
+            "size": tensor.size,
+            "dtype": tensor.dtype,
+            "data": _jsonable_data_blob(tensor.data),
+        }
+        tensor_id = tensor.key or ("tensor_" + _sha256_text(_json_dumps(tensor_identity_payload))[:24])
+
         child_ids = []
         for child in tensor.shape or []:
-            child_ids.append(self._persist_tensor(child, scene_commit_id=scene_commit_id))
+            child_ids.append(
+                self._persist_tensor(
+                    child,
+                    scene_commit_id=scene_commit_id,
+                    parent_tensor_id=tensor_id,
+                )
+            )
 
         data_id = self._persist_data(tensor.data)
         payload = _jsonable_tensor(tensor)
         payload_json = _json_dumps(payload)
         content_hash = _sha256_text(payload_json)
-        tensor_id = tensor.key or ("tensor_" + content_hash[:24])
         tensor_version_id = "tensorver_" + content_hash[:24]
 
         self._insert_ignore(
             """
             INSERT OR IGNORE INTO NDTensorVersion(
-                tensor_version_id, tensor_id, key, size, dtype, data_id, shape_patch_parent,
+                tensor_version_id, tensor_id, parent_tensor_id, key, size, dtype, data_id,
                 tensor_json, content_hash, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 tensor_version_id,
                 tensor_id,
+                parent_tensor_id,
                 tensor.key,
                 tensor.size,
                 tensor.dtype,
                 data_id,
-                None,
                 payload_json,
                 content_hash,
                 _utc_now_iso(),
             ),
         )
-
-        for ordinal, child_tensor_version_id in enumerate(child_ids):
-            self._insert_ignore(
-                """
-                INSERT OR IGNORE INTO NDTensorShapeEdge(
-                    tensor_version_id, child_tensor_version_id, ordinal
-                ) VALUES (?, ?, ?)
-                """,
-                (tensor_version_id, child_tensor_version_id, ordinal),
-            )
 
         if scene_commit_id is not None:
             self._insert_ignore(
@@ -329,12 +337,22 @@ class NDSceneSQLClient:
 
         return tensor_version_id
 
-    def _persist_object_tree(self, obj: NDObject, scene_commit_id: str, memo: dict):
+    def _persist_object_tree(
+        self,
+        obj: NDObject,
+        scene_commit_id: str,
+        memo: dict,
+        parent_object_id: Optional[str] = None,
+    ):
         memo_key = id(obj)
         if memo_key in memo:
             return memo[memo_key]
 
         object_id = _object_identifier(obj)
+        inferred_parent_object_id = parent_object_id
+        if inferred_parent_object_id is None and obj.parents:
+            inferred_parent_object_id = _object_identifier(obj.parents[0])
+
         pose_tensor_version_id = self._persist_tensor(obj.pose, scene_commit_id=scene_commit_id)
         unpose_tensor_version_id = self._persist_tensor(obj.unpose, scene_commit_id=scene_commit_id)
         content_tensor_version_id = self._persist_tensor(obj.content, scene_commit_id=scene_commit_id)
@@ -347,14 +365,15 @@ class NDSceneSQLClient:
         self._insert_ignore(
             """
             INSERT OR IGNORE INTO NDObjectVersion(
-                version_id, object_id, scene_commit_id, state, version_patch_parent,
+                version_id, object_id, parent_object_id, scene_commit_id, state, version_patch_parent,
                 pose_tensor_version_id, unpose_tensor_version_id, content_tensor_version_id,
                 object_json, content_hash, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 version_id,
                 object_id,
+                inferred_parent_object_id,
                 scene_commit_id,
                 payload_json,
                 None,
@@ -376,27 +395,8 @@ class NDSceneSQLClient:
 
         memo[memo_key] = version_id
 
-        for ordinal, child in enumerate(obj.children or []):
-            child_version_id = self._persist_object_tree(child, scene_commit_id, memo)
-            self._insert_ignore(
-                """
-                INSERT OR IGNORE INTO NDObjectEdge(
-                    object_version_id, related_object_version_id, relation_type, ordinal
-                ) VALUES (?, ?, ?, ?)
-                """,
-                (version_id, child_version_id, "child", ordinal),
-            )
-
-        for ordinal, parent in enumerate(obj.parents or []):
-            parent_version_id = self._persist_object_tree(parent, scene_commit_id, memo)
-            self._insert_ignore(
-                """
-                INSERT OR IGNORE INTO NDObjectEdge(
-                    object_version_id, related_object_version_id, relation_type, ordinal
-                ) VALUES (?, ?, ?, ?)
-                """,
-                (version_id, parent_version_id, "parent", ordinal),
-            )
+        for child in obj.children or []:
+            self._persist_object_tree(child, scene_commit_id, memo, parent_object_id=object_id)
 
         return version_id
 
@@ -497,25 +497,6 @@ class NDSceneSQLClient:
             (scene_commit_id,),
         ).fetchall()
 
-        object_edges = self.conn.execute(
-            """
-            SELECT oe.object_version_id,
-                   src.object_id AS object_id,
-                   oe.related_object_version_id,
-                   dst.object_id AS related_object_id,
-                   oe.relation_type,
-                   oe.ordinal
-            FROM NDObjectEdge oe
-            JOIN NDObjectVersion src ON src.version_id = oe.object_version_id
-            JOIN NDObjectVersion dst ON dst.version_id = oe.related_object_version_id
-            JOIN NDSceneCommitObject sco_src ON sco_src.object_version_id = src.version_id
-            JOIN NDSceneCommitObject sco_dst ON sco_dst.object_version_id = dst.version_id
-            WHERE sco_src.scene_commit_id = ? AND sco_dst.scene_commit_id = ?
-            ORDER BY oe.object_version_id, oe.relation_type, oe.ordinal
-            """,
-            (scene_commit_id, scene_commit_id),
-        ).fetchall()
-
         tensors = self.conn.execute(
             """
             SELECT tv.*
@@ -549,46 +530,46 @@ class NDSceneSQLClient:
         ).fetchall()
 
         object_graph = {}
-        for row in object_edges:
-            edge = dict(row)
-            object_id = edge["object_id"]
-            related_object_id = edge["related_object_id"]
-            relation_type = edge["relation_type"]
+        for row in objects:
+            entry = dict(row)
+            object_id = entry["object_id"]
+            object_graph.setdefault(
+                object_id,
+                {
+                    "object_id": object_id,
+                    "parent_object_id": entry.get("parent_object_id"),
+                    "child_object_ids": [],
+                },
+            )
+
+        for row in objects:
+            entry = dict(row)
+            object_id = entry["object_id"]
+            parent_object_id = entry.get("parent_object_id")
             graph_entry = object_graph.setdefault(
                 object_id,
                 {
                     "object_id": object_id,
+                    "parent_object_id": parent_object_id,
                     "child_object_ids": [],
-                    "parent_object_ids": [],
                 },
             )
-            if relation_type == "child":
-                graph_entry["child_object_ids"].append(related_object_id)
-                related_entry = object_graph.setdefault(
-                    related_object_id,
+            graph_entry["parent_object_id"] = parent_object_id
+            if parent_object_id:
+                parent_entry = object_graph.setdefault(
+                    parent_object_id,
                     {
-                        "object_id": related_object_id,
+                        "object_id": parent_object_id,
+                        "parent_object_id": None,
                         "child_object_ids": [],
-                        "parent_object_ids": [],
                     },
                 )
-                related_entry["parent_object_ids"].append(object_id)
-            elif relation_type == "parent":
-                graph_entry["parent_object_ids"].append(related_object_id)
-                related_entry = object_graph.setdefault(
-                    related_object_id,
-                    {
-                        "object_id": related_object_id,
-                        "child_object_ids": [],
-                        "parent_object_ids": [],
-                    },
-                )
-                related_entry["child_object_ids"].append(object_id)
+                if object_id not in parent_entry["child_object_ids"]:
+                    parent_entry["child_object_ids"].append(object_id)
 
         return {
             "commit": dict(commit),
             "objects": [dict(row) for row in objects],
-            "object_edges": [dict(row) for row in object_edges],
             "object_graph": list(object_graph.values()),
             "tensors": [dict(row) for row in tensors],
             "data": [dict(row) for row in data_rows],

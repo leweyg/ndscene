@@ -68,12 +68,15 @@ class NDSceneSQLTests(unittest.TestCase):
         self.assertNotEqual(commit_before, commit_after)
         self.assertIsNotNone(commit_detail)
         self.assertGreaterEqual(len(commit_detail["objects"]), 1)
-        self.assertGreaterEqual(len(commit_detail["object_edges"]), 1)
         self.assertGreaterEqual(len(object_updates), 1)
         world_graph = next(
             entry for entry in commit_detail["object_graph"] if entry["object_id"] == "world"
         )
         self.assertIn("camera", world_graph["child_object_ids"])
+        camera_graph = next(
+            entry for entry in commit_detail["object_graph"] if entry["object_id"] == "camera"
+        )
+        self.assertEqual(camera_graph["parent_object_id"], "world")
         self.assertTrue((before != image_tensor).any().item())
 
     def test_example_database_population(self):
@@ -91,7 +94,7 @@ class NDSceneSQLTests(unittest.TestCase):
                 commit_detail = client.get_commit(commits[0]["scene_commit_id"])
                 self.assertIsNotNone(commit_detail)
                 self.assertGreaterEqual(len(commit_detail["objects"]), 1)
-                self.assertGreaterEqual(len(commit_detail["object_edges"]), 1)
+                self.assertGreaterEqual(len(commit_detail["object_graph"]), 1)
                 self.assertGreaterEqual(len(commit_detail["data"]), 1)
 
                 approved = client.filter_commits_by_label(label_scene_id="scene/labels/approved")

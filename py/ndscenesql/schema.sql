@@ -12,24 +12,15 @@ CREATE TABLE IF NOT EXISTS NDDataBlob(
 CREATE TABLE IF NOT EXISTS NDTensorVersion(
     tensor_version_id TEXT PRIMARY KEY,
     tensor_id TEXT NOT NULL,
+    parent_tensor_id TEXT,
     key TEXT,
     size INTEGER,
     dtype TEXT,
     data_id TEXT,
-    shape_patch_parent TEXT,
     tensor_json TEXT,
     content_hash TEXT NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY(data_id) REFERENCES NDDataBlob(data_id)
-);
-
-CREATE TABLE IF NOT EXISTS NDTensorShapeEdge(
-    tensor_version_id TEXT NOT NULL,
-    child_tensor_version_id TEXT NOT NULL,
-    ordinal INTEGER NOT NULL,
-    PRIMARY KEY(tensor_version_id, child_tensor_version_id, ordinal),
-    FOREIGN KEY(tensor_version_id) REFERENCES NDTensorVersion(tensor_version_id),
-    FOREIGN KEY(child_tensor_version_id) REFERENCES NDTensorVersion(tensor_version_id)
 );
 
 CREATE TABLE IF NOT EXISTS NDSceneCommit(
@@ -50,6 +41,7 @@ CREATE TABLE IF NOT EXISTS NDSceneCommit(
 CREATE TABLE IF NOT EXISTS NDObjectVersion(
     version_id TEXT PRIMARY KEY,
     object_id TEXT NOT NULL,
+    parent_object_id TEXT,
     scene_commit_id TEXT NOT NULL,
     state TEXT,
     version_patch_parent TEXT,
@@ -64,16 +56,6 @@ CREATE TABLE IF NOT EXISTS NDObjectVersion(
     FOREIGN KEY(pose_tensor_version_id) REFERENCES NDTensorVersion(tensor_version_id),
     FOREIGN KEY(unpose_tensor_version_id) REFERENCES NDTensorVersion(tensor_version_id),
     FOREIGN KEY(content_tensor_version_id) REFERENCES NDTensorVersion(tensor_version_id)
-);
-
-CREATE TABLE IF NOT EXISTS NDObjectEdge(
-    object_version_id TEXT NOT NULL,
-    related_object_version_id TEXT NOT NULL,
-    relation_type TEXT NOT NULL,
-    ordinal INTEGER NOT NULL,
-    PRIMARY KEY(object_version_id, related_object_version_id, relation_type, ordinal),
-    FOREIGN KEY(object_version_id) REFERENCES NDObjectVersion(version_id),
-    FOREIGN KEY(related_object_version_id) REFERENCES NDObjectVersion(version_id)
 );
 
 CREATE TABLE IF NOT EXISTS NDSceneCommitObject(
@@ -151,7 +133,9 @@ CREATE TABLE IF NOT EXISTS NDEditSession(
 
 CREATE INDEX IF NOT EXISTS idx_nddatablob_hash ON NDDataBlob(content_hash);
 CREATE INDEX IF NOT EXISTS idx_ndtensorversion_tensor_id ON NDTensorVersion(tensor_id);
+CREATE INDEX IF NOT EXISTS idx_ndtensorversion_parent_tensor_id ON NDTensorVersion(parent_tensor_id);
 CREATE INDEX IF NOT EXISTS idx_ndobjectversion_object_scene ON NDObjectVersion(object_id, scene_commit_id);
+CREATE INDEX IF NOT EXISTS idx_ndobjectversion_parent_object_id ON NDObjectVersion(parent_object_id);
 CREATE INDEX IF NOT EXISTS idx_ndscenecommit_scene_created ON NDSceneCommit(scene_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ndmodellabel_input ON NDModelLabel(input_commit_id);
 CREATE INDEX IF NOT EXISTS idx_ndmodellabel_label_scene ON NDModelLabel(label_scene_id);
