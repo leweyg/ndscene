@@ -257,6 +257,16 @@ class NDSceneSQLClient:
     def _persist_tensor(self, tensor: Optional[NDTensor], scene_commit_id: Optional[str] = None):
         if tensor is None:
             return None
+        if not isinstance(tensor, NDTensor):
+            if _is_native_tensor(tensor):
+                tensor = NDTensor.from_tensor(tensor)
+            else:
+                payload_json = _json_dumps(_to_jsonable(tensor))
+                content_hash = _sha256_text(payload_json)
+                tensor = NDTensor(
+                    key="tensor_" + content_hash[:24],
+                    data=NDData(buffer=payload_json.encode("utf-8"), format="application/json"),
+                )
 
         child_ids = []
         for child in tensor.shape or []:
