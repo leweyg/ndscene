@@ -1,0 +1,31 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: server/backend/Dockerfile
+    working_dir: /app/server/backend
+    environment:
+      PYTHONPATH: /app/py
+      NDSCENE_DB_PATH: /app/py/examples/freed_go.sqlite
+    volumes:
+      - ..:/app
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: server/frontend/Dockerfile
+    working_dir: /app/server/frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api
+    volumes:
+      - ..:/app
+      - frontend_node_modules:/app/server/frontend/node_modules
+    ports:
+      - "4173:4173"
+    depends_on:
+      - backend
+
+volumes:
+  frontend_node_modules:
