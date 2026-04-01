@@ -18,6 +18,8 @@ type CommitRow = {
 type CommitDetail = {
   commit: Record<string, unknown>;
   objects: Array<Record<string, unknown>>;
+  object_edges: Array<Record<string, unknown>>;
+  object_graph: Array<Record<string, unknown>>;
   tensors: Array<Record<string, unknown>>;
   data: Array<Record<string, unknown>>;
   labels: Array<Record<string, unknown>>;
@@ -113,6 +115,8 @@ export default function App() {
     return {
       commit: selectedDetail.commit,
       objects: selectedDetail.objects,
+      object_graph: selectedDetail.object_graph,
+      object_edges: selectedDetail.object_edges,
       tensors: selectedDetail.tensors,
       data: selectedDetail.data,
       labels: selectedDetail.labels,

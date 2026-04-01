@@ -497,6 +497,25 @@ class NDSceneSQLClient:
             (scene_commit_id,),
         ).fetchall()
 
+        object_edges = self.conn.execute(
+            """
+            SELECT oe.object_version_id,
+                   src.object_id AS object_id,
+                   oe.related_object_version_id,
+                   dst.object_id AS related_object_id,
+                   oe.relation_type,
+                   oe.ordinal
+            FROM NDObjectEdge oe
+            JOIN NDObjectVersion src ON src.version_id = oe.object_version_id
+            JOIN NDObjectVersion dst ON dst.version_id = oe.related_object_version_id
+            JOIN NDSceneCommitObject sco_src ON sco_src.object_version_id = src.version_id
+            JOIN NDSceneCommitObject sco_dst ON sco_dst.object_version_id = dst.version_id
+            WHERE sco_src.scene_commit_id = ? AND sco_dst.scene_commit_id = ?
+            ORDER BY oe.object_version_id, oe.relation_type, oe.ordinal
+            """,
+            (scene_commit_id, scene_commit_id),
+        ).fetchall()
+
         tensors = self.conn.execute(
             """
             SELECT tv.*
@@ -529,9 +548,48 @@ class NDSceneSQLClient:
             (scene_commit_id, scene_commit_id, scene_commit_id),
         ).fetchall()
 
+        object_graph = {}
+        for row in object_edges:
+            edge = dict(row)
+            object_id = edge["object_id"]
+            related_object_id = edge["related_object_id"]
+            relation_type = edge["relation_type"]
+            graph_entry = object_graph.setdefault(
+                object_id,
+                {
+                    "object_id": object_id,
+                    "child_object_ids": [],
+                    "parent_object_ids": [],
+                },
+            )
+            if relation_type == "child":
+                graph_entry["child_object_ids"].append(related_object_id)
+                related_entry = object_graph.setdefault(
+                    related_object_id,
+                    {
+                        "object_id": related_object_id,
+                        "child_object_ids": [],
+                        "parent_object_ids": [],
+                    },
+                )
+                related_entry["parent_object_ids"].append(object_id)
+            elif relation_type == "parent":
+                graph_entry["parent_object_ids"].append(related_object_id)
+                related_entry = object_graph.setdefault(
+                    related_object_id,
+                    {
+                        "object_id": related_object_id,
+                        "child_object_ids": [],
+                        "parent_object_ids": [],
+                    },
+                )
+                related_entry["child_object_ids"].append(object_id)
+
         return {
             "commit": dict(commit),
             "objects": [dict(row) for row in objects],
+            "object_edges": [dict(row) for row in object_edges],
+            "object_graph": list(object_graph.values()),
             "tensors": [dict(row) for row in tensors],
             "data": [dict(row) for row in data_rows],
             "labels": [dict(row) for row in labels],
