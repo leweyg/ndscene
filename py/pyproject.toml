@@ -22,9 +22,18 @@ mesh = [
 
 [project.scripts]
 ndscene-sql-write-example-db = "ndscenesql.ndscenesql:main"
+ndscene-flatbuffers-compile = "ndscenepy.flatbuffers.compiler:main"
 
 [tool.setuptools]
-packages = ["ndscenepy", "ndscenesql", "tests", "examples"]
+packages = [
+    "ndscenepy",
+    "ndscenepy.flatbuffers",
+    "ndscenepy.flatbuffers.generated",
+    "ndscenepy.flatbuffers.generated.ndscene",
+    "ndscenesql",
+    "tests",
+    "examples",
+]
 
 [tool.setuptools.package-data]
 ndscenesql = ["schema.sql"]

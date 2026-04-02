@@ -1,0 +1,112 @@
+namespace ndscenepy.flatbuffers.generated.ndscene;
+
+file_identifier "NDSC";
+
+table NDData {
+  data_id:string;
+  path:string;
+  format:string;
+  buffer:[ubyte];
+  tensor_json:string;
+  buffer_encoding:string;
+}
+
+table NDTensor {
+  tensor_id:string;
+  parent_tensor_id:string;
+  key:string;
+  size:ulong;
+  dtype:string;
+  shape:[string];
+  data:NDData;
+  data_json:string;
+}
+
+table NDObject {
+  object_id:string;
+  parent_object_id:string;
+  name:string;
+  child_object_ids:[string];
+  pose:NDTensor;
+  unpose:NDTensor;
+  content:NDTensor;
+  content_tensor_id:string;
+  state_json:string;
+}
+
+table NDScene {
+  scene_id:string;
+  root_object_id:string;
+  object_ids:[string];
+  tensor_ids:[string];
+  data_ids:[string];
+  method_ids:[string];
+  objects:[NDObject];
+  tensors:[NDTensor];
+  data:[NDData];
+}
+
+table NDSceneCommit {
+  scene_id:string;
+  scene_commit_id:string;
+  parent_commit_id:string;
+  packet_data:NDData;
+  packet_data_id:string;
+  packet_format:string;
+  packet_path:string;
+  is_external:bool;
+  commit_json:string;
+  created_at:string;
+  scene:NDScene;
+  object_ids:[string];
+  tensor_ids:[string];
+  data_ids:[string];
+}
+
+table NDInferenceTraceOp {
+  op_index:uint;
+  op_type:string;
+  op_data_json:string;
+}
+
+table NDInferenceEvent {
+  event_id:string;
+  model_id:string;
+  target_object_id:string;
+  scene_commit_id:string;
+  input_commit_id:string;
+  output_commit_id:string;
+  created_at:string;
+  trace:[NDInferenceTraceOp];
+}
+
+table NDModelLabel {
+  label_id:string;
+  model_id:string;
+  event_id:string;
+  context_commit_id:string;
+  input_commit_id:string;
+  label_commit_id:string;
+  label_scene_id:string;
+  notes:string;
+  created_at:string;
+}
+
+table NDEditSession {
+  session_id:string;
+  user_id:string;
+  view_commit_id:string;
+  label_range_start:string;
+  label_range_end:string;
+  ui_state_json:string;
+  created_at:string;
+}
+
+table NDEngineStack {
+  commits:[NDSceneCommit];
+  inference_events:[NDInferenceEvent];
+  model_labels:[NDModelLabel];
+  edit_sessions:[NDEditSession];
+}
+
+root_type NDEngineStack;
