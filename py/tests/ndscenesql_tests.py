@@ -1,3 +1,4 @@
+import json
 import os
 import sqlite3
 import tempfile
@@ -33,7 +34,6 @@ class NDSceneSQLTests(unittest.TestCase):
         before = image_tensor.clone()
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            temp_dir = Path( repo_root / "py" / "examples" )
             db_path = os.path.join(temp_dir, "freed_go.sqlite")
             with NDSceneSQLClient(db_path) as client:
                 commit_before = client.record_scene_commit(
@@ -63,21 +63,59 @@ class NDSceneSQLTests(unittest.TestCase):
                     limit=16,
                 )
 
-            self.assertTrue(os.path.exists(db_path))
+                self.assertTrue(os.path.exists(db_path))
 
-        self.assertNotEqual(commit_before, commit_after)
-        self.assertIsNotNone(commit_detail)
-        self.assertGreaterEqual(len(commit_detail["objects"]), 1)
-        self.assertGreaterEqual(len(object_updates), 1)
-        world_graph = next(
-            entry for entry in commit_detail["object_graph"] if entry["object_id"] == "world"
-        )
-        self.assertIn("camera", world_graph["child_object_ids"])
-        camera_graph = next(
-            entry for entry in commit_detail["object_graph"] if entry["object_id"] == "camera"
-        )
-        self.assertEqual(camera_graph["parent_object_id"], "world")
-        self.assertTrue((before != image_tensor).any().item())
+                self.assertNotEqual(commit_before, commit_after)
+                self.assertIsNotNone(commit_detail)
+                self.assertGreaterEqual(len(commit_detail["objects"]), 1)
+                self.assertGreaterEqual(len(object_updates), 1)
+                world_graph = next(
+                    entry for entry in commit_detail["object_graph"] if entry["object_id"] == "world"
+                )
+                self.assertIn("camera", world_graph["child_object_ids"])
+                camera_graph = next(
+                    entry for entry in commit_detail["object_graph"] if entry["object_id"] == "camera"
+                )
+                self.assertEqual(camera_graph["parent_object_id"], "world")
+                self.assertTrue((before != image_tensor).any().item())
+
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    image_row = conn.execute(
+                        """
+                        SELECT object_json, content_tensor_version_id
+                        FROM NDObjectVersion
+                        WHERE object_id = 'image'
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """
+                    ).fetchone()
+                    image_object_json = json.loads(image_row["object_json"])
+                    self.assertIsInstance(image_object_json["content"], dict)
+                    self.assertIn("@tensor_id", image_object_json["content"])
+                    self.assertIsNotNone(image_row["content_tensor_version_id"])
+
+                    tensor_row = conn.execute(
+                        """
+                        SELECT tensor_id, key, size, dtype, shape_json, data_json, tensor_json
+                        FROM NDTensorVersion
+                        WHERE tensor_version_id = ?
+                        """,
+                        (image_row["content_tensor_version_id"],),
+                    ).fetchone()
+                    self.assertIsNotNone(tensor_row)
+                    self.assertIn("world", tensor_row["tensor_id"])
+                    self.assertIn("image", tensor_row["tensor_id"])
+                    self.assertIn("content", tensor_row["tensor_id"])
+                    self.assertIsNotNone(tensor_row["key"])
+                    self.assertIsNotNone(tensor_row["size"])
+                    self.assertIsNotNone(tensor_row["dtype"])
+                    self.assertTrue(all(isinstance(entry, str) for entry in json.loads(tensor_row["shape_json"])))
+                    self.assertIsInstance(json.loads(tensor_row["data_json"]), dict)
+                    self.assertIsInstance(json.loads(tensor_row["tensor_json"]), dict)
+                finally:
+                    conn.close()
 
     def test_example_database_population(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -101,6 +139,26 @@ class NDSceneSQLTests(unittest.TestCase):
                 rejected = client.filter_commits_by_label(label_scene_id="scene/labels/rejected")
                 self.assertEqual(len(approved), 2)
                 self.assertEqual(len(rejected), 1)
+
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                small_object_row = conn.execute(
+                    """
+                    SELECT object_json, content_tensor_version_id
+                    FROM NDObjectVersion
+                    WHERE object_id = 'camera'
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                small_object_json = json.loads(small_object_row["object_json"])
+                self.assertIn("content", small_object_json)
+                self.assertIsInstance(small_object_json["content"], dict)
+                self.assertNotIn("@tensor_id", small_object_json["content"])
+                self.assertIsNone(small_object_row["content_tensor_version_id"])
+            finally:
+                conn.close()
 
             self.assertFalse(os.path.exists(os.path.join(temp_dir, "missing.sqlite")))
 

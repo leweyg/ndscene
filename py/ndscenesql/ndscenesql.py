@@ -13,6 +13,8 @@ from typing import Optional
 
 from ndscenepy.ndscene import NDData, NDObject, NDScene, NDTensor
 
+EMBEDDED_TENSOR_MAX_JSON_CHARS = 256
+
 
 def _utc_now_iso() -> str:
     return _datetime.datetime.now(_datetime.timezone.utc).isoformat()
@@ -131,6 +133,73 @@ def _object_identifier(obj: NDObject) -> str:
     if obj.name:
         return obj.name
     return "object_" + _sha256_text(_json_dumps(_jsonable_object(obj)))[:16]
+
+
+def _safe_name_token(value: Optional[str]) -> str:
+    raw = value or "unnamed"
+    ans = []
+    for ch in raw:
+        if ch.isalnum():
+            ans.append(ch)
+        else:
+            ans.append("_")
+    text = "".join(ans).strip("_")
+    return text or "unnamed"
+
+
+def _tensor_inline_jsonable(tensor):
+    if tensor is None:
+        return None
+    if not isinstance(tensor, NDTensor):
+        if _is_native_tensor(tensor):
+            return _tensor_to_jsonable(tensor)
+        return _to_jsonable(tensor)
+    return _jsonable_tensor(tensor)
+
+
+def _tensor_size_value(tensor: NDTensor) -> Optional[int]:
+    if tensor.size is not None:
+        return tensor.size
+    if tensor.data is not None and _is_native_tensor(tensor.data.tensor):
+        shape = getattr(tensor.data.tensor, "shape", None)
+        if shape is not None:
+            product = 1
+            for dim in shape:
+                product *= int(dim)
+            return int(product)
+    if tensor.shape:
+        product = 1
+        found = False
+        for child in tensor.shape:
+            child_size = child.size if isinstance(child, NDTensor) else None
+            if child_size is not None:
+                product *= int(child_size)
+                found = True
+        if found:
+            return int(product)
+    return None
+
+
+def _tensor_dtype_value(tensor: NDTensor) -> Optional[str]:
+    if tensor.dtype:
+        return tensor.dtype
+    if tensor.data is not None and _is_native_tensor(tensor.data.tensor):
+        dtype = getattr(tensor.data.tensor, "dtype", None)
+        if dtype is not None:
+            return str(dtype)
+    return None
+
+
+def _tensor_data_json(data: Optional[NDData], data_id: Optional[str]) -> Optional[dict]:
+    if data is None:
+        return None
+    return {
+        "data_id": data_id,
+        "path": data.path,
+        "format": data.format,
+        "has_buffer": data.buffer is not None,
+        "has_tensor": data.tensor is not None,
+    }
 
 
 def _example_database_default_path() -> Path:
@@ -254,10 +323,15 @@ class NDSceneSQLClient:
         )
         return data_id
 
-    def _persist_tensor(
+    def _tensor_id_from_path(self, tensor_path: str) -> str:
+        return "tensor_" + "__".join(_safe_name_token(part) for part in tensor_path.strip("/").split("/") if part.strip())
+
+    def _persist_tensor_reference(
         self,
-        tensor: Optional[NDTensor],
-        scene_commit_id: Optional[str] = None,
+        tensor,
+        scene_commit_id: Optional[str],
+        tensor_path: str,
+        tensor_cache: dict,
         parent_tensor_id: Optional[str] = None,
     ):
         if tensor is None:
@@ -267,33 +341,41 @@ class NDSceneSQLClient:
                 tensor = NDTensor.from_tensor(tensor)
             else:
                 payload_json = _json_dumps(_to_jsonable(tensor))
-                content_hash = _sha256_text(payload_json)
                 tensor = NDTensor(
-                    key="tensor_" + content_hash[:24],
+                    key=_safe_name_token(tensor_path.split("/")[-1]),
                     data=NDData(buffer=payload_json.encode("utf-8"), format="application/json"),
                 )
 
-        tensor_identity_payload = {
-            "key": tensor.key,
-            "size": tensor.size,
-            "dtype": tensor.dtype,
-            "data": _jsonable_data_blob(tensor.data),
-        }
-        tensor_id = tensor.key or ("tensor_" + _sha256_text(_json_dumps(tensor_identity_payload))[:24])
+        cache_key = (id(tensor), tensor_path, parent_tensor_id, scene_commit_id)
+        if cache_key in tensor_cache:
+            return tensor_cache[cache_key]
 
-        child_ids = []
-        for child in tensor.shape or []:
-            child_ids.append(
-                self._persist_tensor(
-                    child,
-                    scene_commit_id=scene_commit_id,
-                    parent_tensor_id=tensor_id,
-                )
+        tensor_id = self._tensor_id_from_path(tensor_path)
+        shape_entries = []
+        for ordinal, child in enumerate(tensor.shape or []):
+            if isinstance(child, NDTensor) and child.size is not None and child.data is None and not child.shape and not child.key:
+                shape_entries.append(str(child.size))
+                continue
+            child_ref = self._persist_tensor_reference(
+                child,
+                scene_commit_id=scene_commit_id,
+                tensor_path=f"{tensor_path}/shape_{ordinal}",
+                tensor_cache=tensor_cache,
+                parent_tensor_id=tensor_id,
             )
+            shape_entries.append(child_ref["tensor_id"])
 
         data_id = self._persist_data(tensor.data)
-        payload = _jsonable_tensor(tensor)
-        payload_json = _json_dumps(payload)
+        row_payload = {
+            "tensor_id": tensor_id,
+            "parent_tensor_id": parent_tensor_id,
+            "key": tensor.key or _safe_name_token(tensor_path.split("/")[-1]),
+            "size": _tensor_size_value(tensor),
+            "dtype": _tensor_dtype_value(tensor),
+            "shape": shape_entries,
+            "data": _tensor_data_json(tensor.data, data_id),
+        }
+        payload_json = _json_dumps(row_payload)
         content_hash = _sha256_text(payload_json)
         tensor_version_id = "tensorver_" + content_hash[:24]
 
@@ -301,17 +383,19 @@ class NDSceneSQLClient:
             """
             INSERT OR IGNORE INTO NDTensorVersion(
                 tensor_version_id, tensor_id, parent_tensor_id, key, size, dtype, data_id,
-                tensor_json, content_hash, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                shape_json, data_json, tensor_json, content_hash, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 tensor_version_id,
                 tensor_id,
                 parent_tensor_id,
-                tensor.key,
-                tensor.size,
-                tensor.dtype,
+                row_payload["key"],
+                row_payload["size"],
+                row_payload["dtype"],
                 data_id,
+                _json_dumps(shape_entries),
+                _json_dumps(row_payload["data"]),
                 payload_json,
                 content_hash,
                 _utc_now_iso(),
@@ -335,29 +419,105 @@ class NDSceneSQLClient:
                     (scene_commit_id, data_id),
                 )
 
-        return tensor_version_id
+        record = {
+            "tensor_id": tensor_id,
+            "tensor_version_id": tensor_version_id,
+            "payload": row_payload,
+        }
+        tensor_cache[cache_key] = record
+        return record
+
+    def _encode_tensor_for_object_field(
+        self,
+        tensor,
+        scene_commit_id: str,
+        tensor_path: str,
+        tensor_cache: dict,
+    ):
+        inline_payload = _tensor_inline_jsonable(tensor)
+        inline_json = _json_dumps(inline_payload)
+        if len(inline_json) <= EMBEDDED_TENSOR_MAX_JSON_CHARS:
+            return {
+                "object_value": inline_payload,
+                "tensor_version_id": None,
+            }
+
+        record = self._persist_tensor_reference(
+            tensor,
+            scene_commit_id=scene_commit_id,
+            tensor_path=tensor_path,
+            tensor_cache=tensor_cache,
+        )
+        return {
+            "object_value": {"@tensor_id": record["tensor_id"]},
+            "tensor_version_id": record["tensor_version_id"],
+        }
+
+    def _object_json_payload(
+        self,
+        obj: NDObject,
+        scene_commit_id: str,
+        object_path: str,
+        tensor_cache: dict,
+    ):
+        pose_info = self._encode_tensor_for_object_field(
+            obj.pose,
+            scene_commit_id=scene_commit_id,
+            tensor_path=f"{object_path}/pose",
+            tensor_cache=tensor_cache,
+        )
+        unpose_info = self._encode_tensor_for_object_field(
+            obj.unpose,
+            scene_commit_id=scene_commit_id,
+            tensor_path=f"{object_path}/unpose",
+            tensor_cache=tensor_cache,
+        )
+        content_info = self._encode_tensor_for_object_field(
+            obj.content,
+            scene_commit_id=scene_commit_id,
+            tensor_path=f"{object_path}/content",
+            tensor_cache=tensor_cache,
+        )
+        return (
+            {
+                "name": obj.name,
+                "pose": pose_info["object_value"],
+                "unpose": unpose_info["object_value"],
+                "content": content_info["object_value"],
+                "children": [child.name for child in (obj.children or [])],
+                "parents": [parent.name for parent in (obj.parents or [])],
+            },
+            pose_info["tensor_version_id"],
+            unpose_info["tensor_version_id"],
+            content_info["tensor_version_id"],
+        )
 
     def _persist_object_tree(
         self,
         obj: NDObject,
         scene_commit_id: str,
         memo: dict,
+        tensor_cache: dict,
         parent_object_id: Optional[str] = None,
+        object_path: Optional[str] = None,
     ):
         memo_key = id(obj)
         if memo_key in memo:
             return memo[memo_key]
 
         object_id = _object_identifier(obj)
+        if object_path is None:
+            object_path = _safe_name_token(object_id)
         inferred_parent_object_id = parent_object_id
         if inferred_parent_object_id is None and obj.parents:
             inferred_parent_object_id = _object_identifier(obj.parents[0])
 
-        pose_tensor_version_id = self._persist_tensor(obj.pose, scene_commit_id=scene_commit_id)
-        unpose_tensor_version_id = self._persist_tensor(obj.unpose, scene_commit_id=scene_commit_id)
-        content_tensor_version_id = self._persist_tensor(obj.content, scene_commit_id=scene_commit_id)
-
-        payload = _jsonable_object(obj)
+        payload, pose_tensor_version_id, unpose_tensor_version_id, content_tensor_version_id = self._object_json_payload(
+            obj,
+            scene_commit_id=scene_commit_id,
+            object_path=object_path,
+            tensor_cache=tensor_cache,
+        )
         payload_json = _json_dumps(payload)
         content_hash = _sha256_text(payload_json)
         version_id = "objver_" + _sha256_text(scene_commit_id + ":" + object_id + ":" + content_hash)[:24]
@@ -395,8 +555,17 @@ class NDSceneSQLClient:
 
         memo[memo_key] = version_id
 
-        for child in obj.children or []:
-            self._persist_object_tree(child, scene_commit_id, memo, parent_object_id=object_id)
+        for ordinal, child in enumerate(obj.children or []):
+            child_name = _object_identifier(child)
+            child_path = f"{object_path}/{ordinal}_{_safe_name_token(child_name)}"
+            self._persist_object_tree(
+                child,
+                scene_commit_id,
+                memo,
+                tensor_cache=tensor_cache,
+                parent_object_id=object_id,
+                object_path=child_path,
+            )
 
         return version_id
 
@@ -454,12 +623,31 @@ class NDSceneSQLClient:
 
             if scene is not None:
                 memo = {}
+                tensor_cache = {}
                 if scene.root is not None:
-                    self._persist_object_tree(scene.root, scene_commit_id, memo)
+                    self._persist_object_tree(
+                        scene.root,
+                        scene_commit_id,
+                        memo,
+                        tensor_cache=tensor_cache,
+                        object_path=_safe_name_token(_object_identifier(scene.root)),
+                    )
                 for obj in (scene.objects or {}).values():
-                    self._persist_object_tree(obj, scene_commit_id, memo)
-                for tensor in (scene.tensors or {}).values():
-                    self._persist_tensor(tensor, scene_commit_id=scene_commit_id)
+                    object_id = _object_identifier(obj)
+                    self._persist_object_tree(
+                        obj,
+                        scene_commit_id,
+                        memo,
+                        tensor_cache=tensor_cache,
+                        object_path=_safe_name_token(object_id),
+                    )
+                for tensor_name, tensor in (scene.tensors or {}).items():
+                    self._persist_tensor_reference(
+                        tensor,
+                        scene_commit_id=scene_commit_id,
+                        tensor_path=f"scene_tensors/{_safe_name_token(tensor_name)}",
+                        tensor_cache=tensor_cache,
+                    )
 
         return scene_commit_id
 

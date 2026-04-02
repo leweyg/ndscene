@@ -54,6 +54,11 @@ export function summarizeStructuredValue(label: string, value: unknown): string 
       base += ` "${record.key}" `;
     } else if (typeof record.object_id === "string") {
       base += ` "${record.object_id}" `;
+    } else if (typeof record.tensor_id === "string") {
+      base += ` "${record.tensor_id}" `;
+    }
+    if (typeof record.tensor_version_id === "string") {
+      base += ` @${record.tensor_version_id} `;
     }
     if ("shape" in record) {
       base += ` ${summarizeShapeValue(record.shape)}`;

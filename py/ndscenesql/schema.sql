@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS NDTensorVersion(
     size INTEGER,
     dtype TEXT,
     data_id TEXT,
+    shape_json TEXT,
+    data_json TEXT,
     tensor_json TEXT,
     content_hash TEXT NOT NULL,
     created_at TEXT NOT NULL,
