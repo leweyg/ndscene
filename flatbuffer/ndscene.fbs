@@ -64,11 +64,12 @@ table NDSceneCommit {
 }
 
 table NDPacket {
-  union nd_type {
-    nd_edge:NDSceneEdge;
-    nd_scene:NDSceneUpdate;
-    nd_commit:NDSceneCommit;
-  }
+  packet_magic:string; // "NDSN" when validated
+
+  // Should be one of these (based on context):
+  edge: NDSceneEdge;
+  scene: NDSceneUpdate;
+  commit: NDSceneCommit;
 }
 
 root_type NDPacket;
