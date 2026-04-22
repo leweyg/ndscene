@@ -38,6 +38,10 @@ export type NDSceneRuntimeFromJsonOptions = {
   createdByModelId?: string;
 };
 
+type NDLegacyImportContext = {
+  registerBuffer: (path: string, format?: string) => NDSceneBufferRuntime;
+};
+
 export class NDTensorShapeEntryRuntime {
   size: number;
   key: string;
@@ -112,6 +116,10 @@ export class NDTensorRuntime {
 
   bytes(): Uint8Array | undefined {
     return this.dataUbytes ? new Uint8Array(this.dataUbytes) : undefined;
+  }
+
+  bufferPath(): string | undefined {
+    return this.dataPath;
   }
 
   shapeSizes(): number[] {
@@ -195,6 +203,10 @@ export class NDSceneGraphRuntime {
 
   getNode(name: string): NDSceneNodeRuntime | undefined {
     return this.nodesByName.get(name);
+  }
+
+  getBuffer(path: string): NDSceneBufferRuntime | undefined {
+    return this.buffersByPath.get(path);
   }
 
   getRootNodes(): NDSceneNodeRuntime[] {
@@ -377,6 +389,31 @@ export class NDSceneRuntime {
     const usedNames = new Set<string>();
     const sharedNameByDefinitionKey = new Map<string, string>();
     const definitions = sceneJson.objects ?? {};
+    const ensureBuffer = (path: string, format?: string): NDSceneBufferRuntime => {
+      const normalizedPath = path.trim();
+      if (!normalizedPath) {
+        throw new Error("Legacy buffer reference is missing a valid path.");
+      }
+
+      const existingBuffer = scene.getBuffer(normalizedPath);
+      if (existingBuffer) {
+        if (!existingBuffer.format && format) {
+          existingBuffer.format = format;
+        }
+        return existingBuffer;
+      }
+
+      const buffer = new NDSceneBufferRuntime({
+        path: normalizedPath,
+        commitId,
+        format: format ?? inferBufferFormatFromPath(normalizedPath),
+      });
+      scene.addBuffer(buffer);
+      return buffer;
+    };
+    const importContext: NDLegacyImportContext = {
+      registerBuffer: ensureBuffer,
+    };
 
     const claimUniqueName = (baseName: string): string => {
       const normalizedBase = baseName.trim() || "node";
@@ -405,9 +442,9 @@ export class NDSceneRuntime {
         commitId,
         parentName,
         edge: new NDSceneEdgeRuntime({
-          pose: tensorRuntimeFromLegacyValue(nodeJson.pose),
-          unpose: tensorRuntimeFromLegacyValue(nodeJson.unpose),
-          content: tensorRuntimeFromLegacyValue(nodeJson.content),
+          pose: tensorRuntimeFromLegacyValue(nodeJson.pose, importContext),
+          unpose: tensorRuntimeFromLegacyValue(nodeJson.unpose, importContext),
+          content: tensorRuntimeFromLegacyValue(nodeJson.content, importContext),
           childNodeNames: [],
         }),
       });
@@ -696,7 +733,10 @@ function tensorRuntimeFromPacket(packetTensor: NDPacketTensor | null | undefined
   });
 }
 
-function tensorRuntimeFromLegacyValue(value: unknown): NDTensorRuntime | undefined {
+function tensorRuntimeFromLegacyValue(
+  value: unknown,
+  importContext?: NDLegacyImportContext,
+): NDTensorRuntime | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -723,22 +763,25 @@ function tensorRuntimeFromLegacyValue(value: unknown): NDTensorRuntime | undefin
     });
   }
   if (Array.isArray(value)) {
-    return tensorRuntimeFromLegacyArray(value);
+    return tensorRuntimeFromLegacyArray(value, importContext);
   }
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
+    if (isLegacyBufferReferenceRecord(record)) {
+      return tensorRuntimeFromLegacyBufferReference(record, importContext);
+    }
     if (isLegacyTensorRecord(record)) {
-      return tensorRuntimeFromLegacyTensorRecord(record);
+      return tensorRuntimeFromLegacyTensorRecord(record, importContext);
     }
 
     const numericArray = numericRecordToArray(record);
     if (numericArray) {
-      return tensorRuntimeFromLegacyArray(numericArray);
+      return tensorRuntimeFromLegacyArray(numericArray, importContext);
     }
 
     const entries = Object.entries(record)
       .map(([entryKey, entryValue]) => {
-        const tensor = tensorRuntimeFromLegacyValue(entryValue);
+        const tensor = tensorRuntimeFromLegacyValue(entryValue, importContext);
         if (!tensor) {
           return null;
         }
@@ -796,7 +839,7 @@ function tensorRuntimeFromScalar(value: null | string | number | boolean): NDTen
   });
 }
 
-function tensorRuntimeFromLegacyArray(array: unknown[]): NDTensorRuntime {
+function tensorRuntimeFromLegacyArray(array: unknown[], importContext?: NDLegacyImportContext): NDTensorRuntime {
   const denseNumericData = flattenDenseNumericArray(array);
   if (denseNumericData) {
     return new NDTensorRuntime({
@@ -808,7 +851,7 @@ function tensorRuntimeFromLegacyArray(array: unknown[]): NDTensorRuntime {
 
   const entries = array
     .map((entry, index) => {
-      const tensor = tensorRuntimeFromLegacyValue(entry);
+      const tensor = tensorRuntimeFromLegacyValue(entry, importContext);
       if (!tensor) {
         return null;
       }
@@ -838,7 +881,35 @@ function isLegacyTensorRecord(record: Record<string, unknown>): boolean {
   );
 }
 
-function tensorRuntimeFromLegacyTensorRecord(record: Record<string, unknown>): NDTensorRuntime {
+function isLegacyBufferReferenceRecord(record: Record<string, unknown>): record is { path: string; format?: string } {
+  return (
+    typeof record.path === "string"
+    && record.path.trim() !== ""
+    && Object.keys(record).every((key) => key === "path" || key === "format")
+  );
+}
+
+function tensorRuntimeFromLegacyBufferReference(
+  record: { path: string; format?: string },
+  importContext?: NDLegacyImportContext,
+): NDTensorRuntime {
+  const bufferPath = record.path.trim();
+  const bufferFormat = record.format && record.format.trim()
+    ? record.format.trim()
+    : inferBufferFormatFromPath(bufferPath);
+  if (importContext) {
+    importContext.registerBuffer(bufferPath, bufferFormat);
+  }
+  return new NDTensorRuntime({
+    dtype: inferTensorDtypeFromBufferFormat(bufferFormat),
+    dataPath: bufferPath,
+  });
+}
+
+function tensorRuntimeFromLegacyTensorRecord(
+  record: Record<string, unknown>,
+  importContext?: NDLegacyImportContext,
+): NDTensorRuntime {
   const legacyShape = Array.isArray(record.shape)
     ? record.shape
         .map((entry) => (typeof entry === "number" && Number.isFinite(entry) ? entry : null))
@@ -846,10 +917,14 @@ function tensorRuntimeFromLegacyTensorRecord(record: Record<string, unknown>): N
     : [];
 
   const dtype = typeof record.dtype === "string" ? record.dtype : inferLegacyTensorDtype(record);
+  const dataPath = typeof record.data_path === "string" ? record.data_path.trim() : undefined;
+  if (dataPath && importContext) {
+    importContext.registerBuffer(dataPath, inferBufferFormatFromPath(dataPath));
+  }
   const tensor = new NDTensorRuntime({
     dtype,
     shape: legacyShape.map((size) => new NDTensorShapeEntryRuntime({ size })),
-    dataPath: typeof record.data_path === "string" ? record.data_path : undefined,
+    dataPath,
   });
 
   const explicitNumbers = extractLegacyNumericData(record.data_numbers);
@@ -1020,6 +1095,33 @@ function estimateTensorSize(tensor: NDTensorRuntime): number {
     return tensor.shape.length;
   }
   return 1;
+}
+
+function inferTensorDtypeFromBufferFormat(format: string): string {
+  return format.startsWith("image/") ? "image" : "buffer_ref";
+}
+
+function inferBufferFormatFromPath(path: string): string {
+  const normalizedPath = path.trim().toLowerCase();
+  if (normalizedPath.endsWith(".png")) {
+    return "image/png";
+  }
+  if (normalizedPath.endsWith(".jpg") || normalizedPath.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  if (normalizedPath.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (normalizedPath.endsWith(".gif")) {
+    return "image/gif";
+  }
+  if (normalizedPath.endsWith(".bmp")) {
+    return "image/bmp";
+  }
+  if (normalizedPath.endsWith(".tif") || normalizedPath.endsWith(".tiff")) {
+    return "image/tiff";
+  }
+  return "application/octet-stream";
 }
 
 function createOptionalString(builder: Builder, value: string): number {

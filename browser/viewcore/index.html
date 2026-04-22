@@ -173,6 +173,7 @@
 
       const THREE = window.THREE;
       const SCENE_URL = "../../json/freed_go/view_1_scene.json";
+      const sceneResourceUrl = new URL(SCENE_URL, window.location.href);
 
       if (!THREE) {
         throw new Error("THREE was not loaded before the viewcore module ran.");
@@ -188,6 +189,7 @@
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
       renderer.setSize(viewport.clientWidth || window.innerWidth, viewport.clientHeight || window.innerHeight);
       viewport.appendChild(renderer.domElement);
+      const textureLoader = new THREE.TextureLoader();
 
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0xddeae4);
@@ -412,6 +414,20 @@
         return tensor.denseNumbers();
       }
 
+      function readTensorString(tensor) {
+        if (!tensor || typeof tensor.scalarString !== "function") {
+          return undefined;
+        }
+        return tensor.scalarString();
+      }
+
+      function readTensorBufferPath(tensor) {
+        if (!tensor || typeof tensor.bufferPath !== "function") {
+          return undefined;
+        }
+        return tensor.bufferPath();
+      }
+
       function matrixFromRuntimePose(poseValue) {
         const matrix = new THREE.Matrix4();
         if (!poseValue) {
@@ -428,6 +444,151 @@
       function applyPose(object3D, poseValue) {
         const matrix = matrixFromRuntimePose(poseValue);
         matrix.decompose(object3D.position, object3D.quaternion, object3D.scale);
+      }
+
+      function resolveSceneBufferUrl(buffer) {
+        return new URL(buffer.path, sceneResourceUrl).href;
+      }
+
+      function applyTextureColorSpace(texture) {
+        if ("colorSpace" in texture && THREE.SRGBColorSpace) {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          return;
+        }
+        if ("encoding" in texture && THREE.sRGBEncoding) {
+          texture.encoding = THREE.sRGBEncoding;
+        }
+      }
+
+      function loadTextureFromSceneBuffer(buffer) {
+        return new Promise((resolve, reject) => {
+          const blobUrl = buffer.dataEncoded && buffer.dataEncoded.length > 0
+            ? URL.createObjectURL(new Blob([buffer.dataEncoded], { type: buffer.format || "application/octet-stream" }))
+            : null;
+          const textureUrl = blobUrl ?? resolveSceneBufferUrl(buffer);
+          textureLoader.load(
+            textureUrl,
+            (texture) => {
+              applyTextureColorSpace(texture);
+              if (blobUrl) {
+                URL.revokeObjectURL(blobUrl);
+              }
+              resolve(texture);
+            },
+            undefined,
+            (error) => {
+              if (blobUrl) {
+                URL.revokeObjectURL(blobUrl);
+              }
+              reject(error instanceof Error ? error : new Error(`Unable to load texture ${buffer.path}`));
+            },
+          );
+        });
+      }
+
+      function extractProjectionMetrics(projectionMatrix) {
+        const projectionElements = projectionMatrix.elements;
+        const xScale = Math.abs(projectionElements[0]) || 1;
+        const yScale = Math.abs(projectionElements[5]) || 1;
+        const fov = (2 * Math.atan(1 / yScale) * 180) / Math.PI;
+        const near = Math.abs((projectionElements[14] || -0.2) / ((projectionElements[10] || -1.2) - 1)) || 0.1;
+        const far = Math.abs((projectionElements[14] || -200) / ((projectionElements[10] || -1.2) + 1)) || 1000;
+        return {
+          projectionElements,
+          xScale,
+          yScale,
+          fov: clamp(fov, 10, 140),
+          near: clamp(near, 0.01, 100),
+          far: clamp(far, 10, 100000),
+        };
+      }
+
+      function createImageProjection(texture, lensNode, imageNode) {
+        const projectionMatrix = lensNode ? matrixFromRuntimePose(lensNode.edge.unpose) : new THREE.Matrix4();
+        const projection = extractProjectionMetrics(projectionMatrix);
+        const imageWidth = texture.image?.naturalWidth || texture.image?.videoWidth || texture.image?.width || 1;
+        const imageHeight = texture.image?.naturalHeight || texture.image?.videoHeight || texture.image?.height || 1;
+        const imageAspect = Math.max(imageWidth, 1) / Math.max(imageHeight, 1);
+        const depth = clamp(projection.near * 2.75, 2.5, 12);
+
+        let planeWidth = (2 * depth) / projection.xScale;
+        let planeHeight = (2 * depth) / projection.yScale;
+        const frustumAspect = planeWidth / Math.max(planeHeight, 1e-6);
+        if (imageAspect > frustumAspect) {
+          planeHeight = planeWidth / imageAspect;
+        } else {
+          planeWidth = planeHeight * imageAspect;
+        }
+
+        const planeGroup = new THREE.Group();
+        planeGroup.name = `${imageNode.name}_projection`;
+
+        const frame = new THREE.Mesh(
+          new THREE.PlaneGeometry(planeWidth * 1.04, planeHeight * 1.04),
+          new THREE.MeshBasicMaterial({
+            color: 0x15110d,
+            transparent: true,
+            opacity: 0.78,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          }),
+        );
+        frame.position.z = -depth - 0.015;
+        planeGroup.add(frame);
+
+        const plate = new THREE.Mesh(
+          new THREE.PlaneGeometry(planeWidth, planeHeight),
+          new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            side: THREE.DoubleSide,
+            toneMapped: false,
+            depthWrite: false,
+          }),
+        );
+        plate.position.z = -depth;
+        planeGroup.add(plate);
+
+        const outline = new THREE.LineSegments(
+          new THREE.EdgesGeometry(new THREE.PlaneGeometry(planeWidth * 1.01, planeHeight * 1.01)),
+          new THREE.LineBasicMaterial({
+            color: 0xf5e8ca,
+            transparent: true,
+            opacity: 0.55,
+          }),
+        );
+        outline.position.z = -depth + 0.002;
+        planeGroup.add(outline);
+
+        return planeGroup;
+      }
+
+      function queueImageContentLoad(node, group, runtimeScene, pendingTextureLoads) {
+        const bufferPath = readTensorBufferPath(node.edge.content);
+        if (!bufferPath || typeof runtimeScene.getBuffer !== "function") {
+          return;
+        }
+
+        const buffer = runtimeScene.getBuffer(bufferPath);
+        if (!buffer || typeof buffer.format !== "string" || !buffer.format.startsWith("image/")) {
+          return;
+        }
+
+        const lensNode = node.parentName ? runtimeScene.getNode(node.parentName) : null;
+        const imageSpace = readTensorString(node.edge.unpose);
+        if (imageSpace && imageSpace !== "pixel_index_from_unit_viewport") {
+          return;
+        }
+        const loadPromise = loadTextureFromSceneBuffer(buffer)
+          .then((texture) => {
+            const projection = createImageProjection(texture, lensNode, node);
+            group.add(projection);
+          })
+          .catch((error) => {
+            console.warn(`Unable to load image buffer "${buffer.path}"`, error);
+          });
+
+        pendingTextureLoads.push(loadPromise);
       }
 
       function buildMeshFromContent(content, label) {
@@ -473,7 +634,7 @@
         return mesh;
       }
 
-      function buildRuntimeNode(node, runtimeScene, ancestry = new Set()) {
+      function buildRuntimeNode(node, runtimeScene, pendingTextureLoads, ancestry = new Set()) {
         const group = new THREE.Group();
         group.name = node.name;
 
@@ -486,6 +647,8 @@
           group.add(mesh);
         }
 
+        queueImageContentLoad(node, group, runtimeScene, pendingTextureLoads);
+
         const nextAncestry = new Set(ancestry);
         nextAncestry.add(node.name);
 
@@ -493,7 +656,7 @@
           if (nextAncestry.has(childNode.name)) {
             continue;
           }
-          group.add(buildRuntimeNode(childNode, runtimeScene, nextAncestry));
+          group.add(buildRuntimeNode(childNode, runtimeScene, pendingTextureLoads, nextAncestry));
         }
 
         return group;
@@ -504,18 +667,14 @@
         const lensNode = cameraNode ? runtimeScene.getChildNodes(cameraNode)[0] ?? null : null;
 
         const projectionMatrix = lensNode ? matrixFromRuntimePose(lensNode.edge.unpose) : new THREE.Matrix4();
-        const projectionElements = projectionMatrix.elements;
-        const verticalScale = projectionElements[5] || 1;
-        const fov = (2 * Math.atan(1 / verticalScale) * 180) / Math.PI;
-        const near = Math.abs((projectionElements[14] || -0.2) / ((projectionElements[10] || -1.2) - 1)) || 0.1;
-        const far = Math.abs((projectionElements[14] || -200) / ((projectionElements[10] || -1.2) + 1)) || 1000;
+        const projection = extractProjectionMetrics(projectionMatrix);
 
         return {
           cameraNode,
           lensNode,
-          fov: clamp(fov, 10, 140),
-          near: clamp(near, 0.01, 100),
-          far: clamp(far, 10, 100000),
+          fov: projection.fov,
+          near: projection.near,
+          far: projection.far,
         };
       }
 
@@ -594,11 +753,12 @@
         const stoneCount = boardNode ? boardNode.edge.childNodeNames.length : 0;
         const meshStone = runtimeScene.getNode("mesh_stone");
         const meshVerticesTensor = meshStone?.edge.content?.child("vertices");
+        const bufferCount = runtimeScene.buffersByPath.size;
         const vertexCount = meshVerticesTensor
           ? Math.floor(readTensorNumbers(meshVerticesTensor).length / 3)
           : 0;
 
-        sceneStatsElement.textContent = `${runtimeScene.nodesByName.size} nodes · ${stoneCount} stones · ${vertexCount} verts · ${bufferBytes} bytes`;
+        sceneStatsElement.textContent = `${runtimeScene.nodesByName.size} nodes · ${stoneCount} stones · ${vertexCount} verts · ${bufferCount} buffers · ${bufferBytes} bytes`;
       }
 
       async function loadScene() {
@@ -617,15 +777,20 @@
 
         activeBufferBytes = runtimeFromJson.toFlatbufferBuffer();
         activeRuntime = NDSceneRuntime.fromFlatbufferBuffer(activeBufferBytes);
+        const pendingTextureLoads = [];
 
         clearObjectChildren(worldRoot);
         for (const rootNode of activeRuntime.activeScene.getRootNodes()) {
-          worldRoot.add(buildRuntimeNode(rootNode, activeRuntime.activeScene));
+          worldRoot.add(buildRuntimeNode(rootNode, activeRuntime.activeScene, pendingTextureLoads));
         }
 
         updateSceneMetrics(activeRuntime.activeScene, activeBufferBytes.length);
         frameSurface();
         configureCamera(activeRuntime.activeScene);
+        if (pendingTextureLoads.length > 0) {
+          setStatus(`Loaded ${SCENE_URL}; streaming ${pendingTextureLoads.length} image buffer(s)...`, "loading");
+          await Promise.allSettled(pendingTextureLoads);
+        }
         setStatus(`Loaded ${SCENE_URL} via JSON -> FlatBuffer -> runtime`, "ready");
       }
 
