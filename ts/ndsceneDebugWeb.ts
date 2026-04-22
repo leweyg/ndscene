@@ -133,11 +133,11 @@ export class NDSceneDebugInspector {
     const runtimeSection = createSection("Active Commit");
     runtimeSection.appendChild(createKvList([
       ["commitId", runtime.activeCommit.commitId],
-      ["previousId", runtime.activeCommit.commitPreviousId || "none"],
-      ["inputId", runtime.activeCommit.commitInputId || "none"],
+      ["previousId", runtime.activeCommit.commitPreviousId || undefined],
+      ["inputId", runtime.activeCommit.commitInputId || undefined],
       ["createdAt", runtime.activeCommit.createdAt || "unknown"],
       ["createdBy", runtime.activeCommit.createdByModelId || "unknown"],
-      ["commitOrder", runtime.commitOrder.join(" -> ") || "none"],
+      ["commitOrder", runtime.commitOrder.join(" -> ") || undefined],
     ]));
     container.appendChild(runtimeSection);
 
@@ -210,7 +210,9 @@ export class NDSceneDebugInspector {
     summary.append(
       createInlineLabel(node.name, "node"),
       createInlineMeta(`children ${node.edge.childNodeNames.length}`),
-      createInlineMeta(node.edge.content ? describeTensor(node.edge.content) : "content none"),
+      ...optionalInlineMetas([
+        node.edge.content ? describeTensor(node.edge.content) : undefined,
+      ]),
     );
     entry.appendChild(summary);
 
@@ -219,11 +221,11 @@ export class NDSceneDebugInspector {
     body.appendChild(createKvList([
       ["name", node.name],
       ["commitId", node.commitId],
-      ["parentName", node.parentName || "none"],
-      ["pose", describeTensor(node.edge.pose)],
-      ["unpose", describeTensor(node.edge.unpose)],
-      ["content", describeTensor(node.edge.content)],
-      ["edgePacket", node.edgePacket ? `${node.edgePacket.length} bytes` : "none"],
+      ["parentName", node.parentName || undefined],
+      ["pose", describeOptionalTensor(node.edge.pose)],
+      ["unpose", describeOptionalTensor(node.edge.unpose)],
+      ["content", describeOptionalTensor(node.edge.content)],
+      ["edgePacket", node.edgePacket ? `${node.edgePacket.length} bytes` : undefined],
     ]));
 
     const nextAncestry = new Set(ancestry);
@@ -281,11 +283,11 @@ export class NDSceneDebugInspector {
       body.appendChild(createKvList([
         ["name", node.name],
         ["commitId", node.commitId],
-        ["parentName", node.parentName || "none"],
-        ["childNames", node.edge.childNodeNames.join(", ") || "none"],
-        ["pose", describeTensor(node.edge.pose)],
-        ["unpose", describeTensor(node.edge.unpose)],
-        ["content", describeTensor(node.edge.content)],
+        ["parentName", node.parentName || undefined],
+        ["childNames", node.edge.childNodeNames.join(", ") || undefined],
+        ["pose", describeOptionalTensor(node.edge.pose)],
+        ["unpose", describeOptionalTensor(node.edge.unpose)],
+        ["content", describeOptionalTensor(node.edge.content)],
       ]));
       entry.appendChild(body);
       listContainer.appendChild(entry);
@@ -324,9 +326,9 @@ export class NDSceneDebugInspector {
       body.appendChild(createKvList([
         ["path", buffer.path],
         ["commitId", buffer.commitId],
-        ["format", buffer.format || "unknown"],
-        ["dataEncoded", buffer.dataEncoded ? `${buffer.dataEncoded.length} bytes` : "none"],
-        ["dataDecoded", describeTensor(buffer.dataDecoded)],
+        ["format", buffer.format || undefined],
+        ["dataEncoded", buffer.dataEncoded ? `${buffer.dataEncoded.length} bytes` : undefined],
+        ["dataDecoded", describeOptionalTensor(buffer.dataDecoded)],
       ]));
       entry.appendChild(body);
       listContainer.appendChild(entry);
@@ -582,11 +584,15 @@ function createChip(label: string): HTMLSpanElement {
   return chip;
 }
 
-function createKvList(entries: Array<[string, string]>): HTMLDivElement {
+function createKvList(entries: Array<[string, string | null | undefined]>): HTMLDivElement {
   const container = document.createElement("div");
   container.className = "ndscene-debug__kv";
 
   for (const [key, value] of entries) {
+    if (value === null || value === undefined || value === "") {
+      continue;
+    }
+
     const keyElement = document.createElement("div");
     keyElement.className = "ndscene-debug__key";
     keyElement.textContent = key;
@@ -620,6 +626,12 @@ function createInlineMeta(text: string): HTMLSpanElement {
   metaElement.className = "ndscene-debug__inline-meta";
   metaElement.textContent = text;
   return metaElement;
+}
+
+function optionalInlineMetas(values: Array<string | null | undefined>): HTMLSpanElement[] {
+  return values
+    .filter((value): value is string => value !== null && value !== undefined && value !== "")
+    .map((value) => createInlineMeta(value));
 }
 
 function createEmptyState(text: string): HTMLDivElement {
@@ -674,6 +686,10 @@ function describeTensor(tensor?: NDTensorRuntime): string {
   }
 
   return `${tensor.dtype} ${shapeText}`;
+}
+
+function describeOptionalTensor(tensor?: NDTensorRuntime): string | undefined {
+  return tensor ? describeTensor(tensor) : undefined;
 }
 
 function formatNumber(value: number): string {

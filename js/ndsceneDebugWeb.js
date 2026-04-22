@@ -88,11 +88,11 @@ export class NDSceneDebugInspector {
         const runtimeSection = createSection("Active Commit");
         runtimeSection.appendChild(createKvList([
             ["commitId", runtime.activeCommit.commitId],
-            ["previousId", runtime.activeCommit.commitPreviousId || "none"],
-            ["inputId", runtime.activeCommit.commitInputId || "none"],
+            ["previousId", runtime.activeCommit.commitPreviousId || undefined],
+            ["inputId", runtime.activeCommit.commitInputId || undefined],
             ["createdAt", runtime.activeCommit.createdAt || "unknown"],
             ["createdBy", runtime.activeCommit.createdByModelId || "unknown"],
-            ["commitOrder", runtime.commitOrder.join(" -> ") || "none"],
+            ["commitOrder", runtime.commitOrder.join(" -> ") || undefined],
         ]));
         container.appendChild(runtimeSection);
         if (this.viewMode === "tree") {
@@ -148,18 +148,20 @@ export class NDSceneDebugInspector {
         entry.className = "ndscene-debug__entry";
         entry.open = ancestry.size < 2;
         const summary = document.createElement("summary");
-        summary.append(createInlineLabel(node.name, "node"), createInlineMeta(`children ${node.edge.childNodeNames.length}`), createInlineMeta(node.edge.content ? describeTensor(node.edge.content) : "content none"));
+        summary.append(createInlineLabel(node.name, "node"), createInlineMeta(`children ${node.edge.childNodeNames.length}`), ...optionalInlineMetas([
+            node.edge.content ? describeTensor(node.edge.content) : undefined,
+        ]));
         entry.appendChild(summary);
         const body = document.createElement("div");
         body.className = "ndscene-debug__children";
         body.appendChild(createKvList([
             ["name", node.name],
             ["commitId", node.commitId],
-            ["parentName", node.parentName || "none"],
-            ["pose", describeTensor(node.edge.pose)],
-            ["unpose", describeTensor(node.edge.unpose)],
-            ["content", describeTensor(node.edge.content)],
-            ["edgePacket", node.edgePacket ? `${node.edgePacket.length} bytes` : "none"],
+            ["parentName", node.parentName || undefined],
+            ["pose", describeOptionalTensor(node.edge.pose)],
+            ["unpose", describeOptionalTensor(node.edge.unpose)],
+            ["content", describeOptionalTensor(node.edge.content)],
+            ["edgePacket", node.edgePacket ? `${node.edgePacket.length} bytes` : undefined],
         ]));
         const nextAncestry = new Set(ancestry);
         nextAncestry.add(node.name);
@@ -204,11 +206,11 @@ export class NDSceneDebugInspector {
             body.appendChild(createKvList([
                 ["name", node.name],
                 ["commitId", node.commitId],
-                ["parentName", node.parentName || "none"],
-                ["childNames", node.edge.childNodeNames.join(", ") || "none"],
-                ["pose", describeTensor(node.edge.pose)],
-                ["unpose", describeTensor(node.edge.unpose)],
-                ["content", describeTensor(node.edge.content)],
+                ["parentName", node.parentName || undefined],
+                ["childNames", node.edge.childNodeNames.join(", ") || undefined],
+                ["pose", describeOptionalTensor(node.edge.pose)],
+                ["unpose", describeOptionalTensor(node.edge.unpose)],
+                ["content", describeOptionalTensor(node.edge.content)],
             ]));
             entry.appendChild(body);
             listContainer.appendChild(entry);
@@ -236,9 +238,9 @@ export class NDSceneDebugInspector {
             body.appendChild(createKvList([
                 ["path", buffer.path],
                 ["commitId", buffer.commitId],
-                ["format", buffer.format || "unknown"],
-                ["dataEncoded", buffer.dataEncoded ? `${buffer.dataEncoded.length} bytes` : "none"],
-                ["dataDecoded", describeTensor(buffer.dataDecoded)],
+                ["format", buffer.format || undefined],
+                ["dataEncoded", buffer.dataEncoded ? `${buffer.dataEncoded.length} bytes` : undefined],
+                ["dataDecoded", describeOptionalTensor(buffer.dataDecoded)],
             ]));
             entry.appendChild(body);
             listContainer.appendChild(entry);
@@ -489,6 +491,9 @@ function createKvList(entries) {
     const container = document.createElement("div");
     container.className = "ndscene-debug__kv";
     for (const [key, value] of entries) {
+        if (value === null || value === undefined || value === "") {
+            continue;
+        }
         const keyElement = document.createElement("div");
         keyElement.className = "ndscene-debug__key";
         keyElement.textContent = key;
@@ -515,6 +520,11 @@ function createInlineMeta(text) {
     metaElement.className = "ndscene-debug__inline-meta";
     metaElement.textContent = text;
     return metaElement;
+}
+function optionalInlineMetas(values) {
+    return values
+        .filter((value) => value !== null && value !== undefined && value !== "")
+        .map((value) => createInlineMeta(value));
 }
 function createEmptyState(text) {
     const element = document.createElement("div");
@@ -558,6 +568,9 @@ function describeTensor(tensor) {
         return `${tensor.dtype} ${shapeText} ${tensor.shape.length} child${tensor.shape.length === 1 ? "" : "ren"}`;
     }
     return `${tensor.dtype} ${shapeText}`;
+}
+function describeOptionalTensor(tensor) {
+    return tensor ? describeTensor(tensor) : undefined;
 }
 function formatNumber(value) {
     if (!Number.isFinite(value)) {
