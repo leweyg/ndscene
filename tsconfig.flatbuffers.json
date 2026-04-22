@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "ts",
+    "outDir": "js",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmitOnError": true,
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": [
+    "ts/ndsceneFlatbuffers.ts",
+    "ts/ndscenepy/flatbuffers/generated/**/*.ts",
+    "ts/node_modules/flatbuffers/**/*.ts"
+  ],
+  "exclude": []
+}
