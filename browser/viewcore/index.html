@@ -160,9 +160,23 @@
       </div>
     </div>
 
+    <script type="importmap">
+      {
+        "imports": {
+          "flatbuffers": "../../js/node_modules/flatbuffers/index.js"
+        }
+      }
+    </script>
     <script src="../ctscan/three.js"></script>
-    <script>
+    <script type="module">
+      import { NDSceneRuntime } from "../../js/ndsceneRuntime.js";
+
+      const THREE = window.THREE;
       const SCENE_URL = "../../json/freed_go/view_1_scene.json";
+
+      if (!THREE) {
+        throw new Error("THREE was not loaded before the viewcore module ran.");
+      }
 
       const viewport = document.getElementById("viewport");
       const statusElement = document.getElementById("status");
@@ -200,6 +214,8 @@
       let sceneBounds = new THREE.Box3(new THREE.Vector3(-10, -10, -10), new THREE.Vector3(10, 10, 10));
       let sceneCenter = new THREE.Vector3();
       let sceneRadius = 25;
+      let activeRuntime = null;
+      let activeBufferBytes = null;
 
       class BasicOrbitControls {
         constructor(cameraRef, domElement, onChange) {
@@ -401,22 +417,29 @@
         return [];
       }
 
-      function matrixFromPose(pose) {
+      function matrixFromRuntimePose(poseValue) {
         const matrix = new THREE.Matrix4();
-        const data = pose && Array.isArray(pose.data) ? pose.data : null;
-        if (!data || data.length !== 16) {
+        if (!poseValue || typeof poseValue !== "object" || Array.isArray(poseValue)) {
+          return matrix.identity();
+        }
+
+        const data = flattenTensorData(poseValue.data);
+        if (data.length !== 16) {
           return matrix.identity();
         }
         return matrix.fromArray(data);
       }
 
-      function applyPose(object3D, pose) {
-        const matrix = matrixFromPose(pose);
+      function applyPose(object3D, poseValue) {
+        const matrix = matrixFromRuntimePose(poseValue);
         matrix.decompose(object3D.position, object3D.quaternion, object3D.scale);
       }
 
       function buildMeshFromContent(content, label) {
-        if (!content || !content.vertices || !content.indices) {
+        if (!content || typeof content !== "object" || Array.isArray(content)) {
+          return null;
+        }
+        if (!content.vertices || !content.indices) {
           return null;
         }
 
@@ -452,51 +475,37 @@
         return mesh;
       }
 
-      function buildNode(nodeData, sceneData) {
-        const node = new THREE.Group();
-        node.name = nodeData.name || "node";
+      function buildRuntimeNode(node, runtimeScene, ancestry = new Set()) {
+        const group = new THREE.Group();
+        group.name = node.name;
 
-        if (nodeData.pose) {
-          applyPose(node, nodeData.pose);
+        if (node.edge.pose) {
+          applyPose(group, node.edge.pose);
         }
 
-        const contentMesh = buildMeshFromContent(nodeData.content, node.name);
-        if (contentMesh) {
-          node.add(contentMesh);
+        const mesh = buildMeshFromContent(node.edge.content, node.name);
+        if (mesh) {
+          group.add(mesh);
         }
 
-        const children = Array.isArray(nodeData.children) ? nodeData.children : [];
-        for (const child of children) {
-          if (typeof child === "string") {
-            const referenced = sceneData.objects && sceneData.objects[child];
-            if (referenced) {
-              const referencedNode = buildNode(referenced, sceneData);
-              referencedNode.name = child;
-              node.add(referencedNode);
-            }
+        const nextAncestry = new Set(ancestry);
+        nextAncestry.add(node.name);
+
+        for (const childNode of runtimeScene.getChildNodes(node)) {
+          if (nextAncestry.has(childNode.name)) {
             continue;
           }
-
-          if (child && typeof child === "object") {
-            node.add(buildNode(child, sceneData));
-          }
+          group.add(buildRuntimeNode(childNode, runtimeScene, nextAncestry));
         }
 
-        return node;
+        return group;
       }
 
-      function extractCameraSpec(sceneData) {
-        const rootChildren = Array.isArray(sceneData.root && sceneData.root.children)
-          ? sceneData.root.children
-          : [];
-        const cameraNode = rootChildren.find((entry) => entry && entry.name === "camera");
-        const lensNode = cameraNode
-          && Array.isArray(cameraNode.children)
-          && cameraNode.children.length > 0
-          ? cameraNode.children[0]
-          : null;
+      function extractCameraSpec(runtimeScene) {
+        const cameraNode = runtimeScene.getNode("camera");
+        const lensNode = cameraNode ? runtimeScene.getChildNodes(cameraNode)[0] ?? null : null;
 
-        const projectionMatrix = lensNode && lensNode.unpose ? matrixFromPose(lensNode.unpose) : new THREE.Matrix4();
+        const projectionMatrix = lensNode ? matrixFromRuntimePose(lensNode.edge.unpose) : new THREE.Matrix4();
         const projectionElements = projectionMatrix.elements;
         const verticalScale = projectionElements[5] || 1;
         const fov = (2 * Math.atan(1 / verticalScale) * 180) / Math.PI;
@@ -543,8 +552,8 @@
         surfaceGroup.add(axes);
       }
 
-      function configureCamera(sceneData) {
-        const cameraSpec = extractCameraSpec(sceneData);
+      function configureCamera(runtimeScene) {
+        const cameraSpec = extractCameraSpec(runtimeScene);
         const aspect = Math.max(viewport.clientWidth, 1) / Math.max(viewport.clientHeight, 1);
         camera.fov = cameraSpec.fov;
         camera.near = cameraSpec.near;
@@ -552,8 +561,8 @@
         camera.aspect = aspect;
         camera.updateProjectionMatrix();
 
-        if (cameraSpec.cameraNode && cameraSpec.cameraNode.pose) {
-          applyPose(camera, cameraSpec.cameraNode.pose);
+        if (cameraSpec.cameraNode && cameraSpec.cameraNode.edge.pose) {
+          applyPose(camera, cameraSpec.cameraNode.edge.pose);
         } else {
           camera.position.set(sceneCenter.x + sceneRadius * 1.8, sceneCenter.y + sceneRadius * 1.2, sceneCenter.z + sceneRadius * 1.8);
           camera.lookAt(sceneCenter);
@@ -571,7 +580,7 @@
         };
       }
 
-      function updateSceneMetrics(sceneData) {
+      function updateSceneMetrics(runtimeScene, bufferBytes) {
         worldRoot.updateMatrixWorld(true);
         sceneBounds = new THREE.Box3().setFromObject(worldRoot);
         if (sceneBounds.isEmpty()) {
@@ -583,17 +592,14 @@
         sceneCenter = sceneBounds.getCenter(new THREE.Vector3());
         sceneRadius = Math.max(sceneBounds.getSize(new THREE.Vector3()).length() * 0.35, 10);
 
-        const rootChildren = Array.isArray(sceneData.root && sceneData.root.children)
-          ? sceneData.root.children
-          : [];
-        const boardNode = rootChildren.find((entry) => entry && entry.name === "board");
-        const stoneCount = boardNode && Array.isArray(boardNode.children) ? boardNode.children.length : 0;
-        const meshDef = sceneData.objects && sceneData.objects.mesh_stone;
-        const vertexCount = meshDef && meshDef.content && meshDef.content.vertices && Array.isArray(meshDef.content.vertices.data)
-          ? Math.floor(meshDef.content.vertices.data.length / 3)
+        const boardNode = runtimeScene.getNode("board");
+        const stoneCount = boardNode ? boardNode.edge.childNodeNames.length : 0;
+        const meshStone = runtimeScene.getNode("mesh_stone");
+        const vertexCount = meshStone && meshStone.edge.content && meshStone.edge.content.vertices
+          ? Math.floor(flattenTensorData(meshStone.edge.content.vertices.data).length / 3)
           : 0;
 
-        sceneStatsElement.textContent = `${stoneCount} stones · ${vertexCount} verts per stone`;
+        sceneStatsElement.textContent = `${runtimeScene.nodesByName.size} nodes · ${stoneCount} stones · ${vertexCount} verts · ${bufferBytes} bytes`;
       }
 
       async function loadScene() {
@@ -604,24 +610,24 @@
           throw new Error(`HTTP ${response.status} while fetching ${SCENE_URL}`);
         }
 
-        const sceneData = await response.json();
+        const legacySceneJson = await response.json();
+        const runtimeFromJson = NDSceneRuntime.fromLegacyJson(legacySceneJson, {
+          commitId: "freed_go_view_1",
+          createdByModelId: "browser/viewcore",
+        });
+
+        activeBufferBytes = runtimeFromJson.toFlatbufferBuffer();
+        activeRuntime = NDSceneRuntime.fromFlatbufferBuffer(activeBufferBytes);
+
         clearObjectChildren(worldRoot);
-
-        const rootChildren = Array.isArray(sceneData.root && sceneData.root.children)
-          ? sceneData.root.children
-          : [];
-
-        for (const child of rootChildren) {
-          if (!child || typeof child !== "object" || child.name === "camera") {
-            continue;
-          }
-          worldRoot.add(buildNode(child, sceneData));
+        for (const rootNode of activeRuntime.activeScene.getRootNodes()) {
+          worldRoot.add(buildRuntimeNode(rootNode, activeRuntime.activeScene));
         }
 
-        updateSceneMetrics(sceneData);
+        updateSceneMetrics(activeRuntime.activeScene, activeBufferBytes.length);
         frameSurface();
-        configureCamera(sceneData);
-        setStatus(`Loaded ${SCENE_URL}`, "ready");
+        configureCamera(activeRuntime.activeScene);
+        setStatus(`Loaded ${SCENE_URL} via JSON -> FlatBuffer -> runtime`, "ready");
       }
 
       function resetView() {

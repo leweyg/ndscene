@@ -1,10 +1,10 @@
-import { ByteBuffer, SIZE_PREFIX_LENGTH } from "flatbuffers";
+import { Builder, ByteBuffer, SIZE_PREFIX_LENGTH } from "flatbuffers";
 
 import * as Generated from "./ndscenepy/flatbuffers/generated/ndscene.js";
 import { NDPacketRoot } from "./ndscenepy/flatbuffers/generated/ndscene/ndpacket-root.js";
 
 export * from "./ndscenepy/flatbuffers/generated/ndscene.js";
-export { ByteBuffer, SIZE_PREFIX_LENGTH };
+export { Builder, ByteBuffer, SIZE_PREFIX_LENGTH };
 
 export type NDPacketBufferInput = ArrayBuffer | ArrayBufferView;
 
