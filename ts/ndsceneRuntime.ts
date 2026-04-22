@@ -1,20 +1,6 @@
 import {
   runtimeFromFlatbufferBuffer,
-  runtimeFromLegacyJson,
-  runtimeFromLegacyJsonSequence,
   runtimeToFlatbufferBuffer,
-} from "./ndsceneLegacyJson.js";
-import type {
-  NDLegacySceneJson,
-  NDSceneRuntimeFromJsonCommitInput,
-  NDSceneRuntimeFromJsonOptions,
-} from "./ndsceneLegacyJson.js";
-
-export type {
-  NDLegacySceneJson,
-  NDLegacySceneNodeJson,
-  NDSceneRuntimeFromJsonCommitInput,
-  NDSceneRuntimeFromJsonOptions,
 } from "./ndsceneLegacyJson.js";
 
 export class NDTensorShapeEntryRuntime {
@@ -298,13 +284,5 @@ export class NDSceneRuntime {
 
   static fromFlatbufferBuffer(buffer: ArrayBuffer | ArrayBufferView): NDSceneRuntime {
     return runtimeFromFlatbufferBuffer(buffer);
-  }
-
-  static fromLegacyJsonSequence(commits: NDSceneRuntimeFromJsonCommitInput[]): NDSceneRuntime {
-    return runtimeFromLegacyJsonSequence(commits);
-  }
-
-  static fromLegacyJson(sceneJson: NDLegacySceneJson, options: NDSceneRuntimeFromJsonOptions = {}): NDSceneRuntime {
-    return runtimeFromLegacyJson(sceneJson, options);
   }
 }

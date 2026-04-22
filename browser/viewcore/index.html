@@ -200,6 +200,9 @@
     <script src="../ctscan/three.js"></script>
     <script type="module">
       import { NDSceneRuntime } from "../../js/ndsceneRuntime.js";
+      import {
+        runtimeFromLegacyJsonSequence,
+      } from "../../js/ndsceneLegacyJson.js";
 
       const THREE = window.THREE;
       const SCENE_SOURCES = [
@@ -922,7 +925,7 @@
         const legacyCommits = await Promise.all(
           responses.map((response) => response.json()),
         );
-        const runtimeFromJson = NDSceneRuntime.fromLegacyJsonSequence(
+        const runtimeFromJson = runtimeFromLegacyJsonSequence(
           legacyCommits.map((legacySceneJson, index) => ({
             sceneJson: legacySceneJson,
             commitId: SCENE_SOURCES[index].commitId,

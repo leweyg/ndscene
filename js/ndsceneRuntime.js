@@ -1,4 +1,4 @@
-import { runtimeFromFlatbufferBuffer, runtimeFromLegacyJson, runtimeFromLegacyJsonSequence, runtimeToFlatbufferBuffer, } from "./ndsceneLegacyJson.js";
+import { runtimeFromFlatbufferBuffer, runtimeToFlatbufferBuffer, } from "./ndsceneLegacyJson.js";
 export class NDTensorShapeEntryRuntime {
     size;
     key;
@@ -208,11 +208,5 @@ export class NDSceneRuntime {
     }
     static fromFlatbufferBuffer(buffer) {
         return runtimeFromFlatbufferBuffer(buffer);
-    }
-    static fromLegacyJsonSequence(commits) {
-        return runtimeFromLegacyJsonSequence(commits);
-    }
-    static fromLegacyJson(sceneJson, options = {}) {
-        return runtimeFromLegacyJson(sceneJson, options);
     }
 }
