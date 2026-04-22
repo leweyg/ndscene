@@ -1,6 +1,63 @@
 import { Builder, NDPacketBuffer, NDPacketRoot, NDPacketSceneCommit, NDPacketSceneEdge, NDPacketSceneNode, NDPacketSceneUpdate, NDPacketShapeEntry, NDPacketTensor, ndPacketBytes, ndPacketRootFromBuffer, } from "./ndsceneFlatbuffers.js";
 const ROOT_PACKET_MAGIC = "NDSN";
 const STRING_DECODER = new TextDecoder();
+export class NDTensorShapeEntryRuntime {
+    size;
+    key;
+    tensor;
+    constructor(init = {}) {
+        this.size = init.size ?? 0;
+        this.key = init.key ?? "";
+        this.tensor = init.tensor;
+    }
+}
+export class NDTensorRuntime {
+    shape;
+    dtype;
+    dataString;
+    dataNumbers;
+    dataUbytes;
+    dataPath;
+    constructor(init = {}) {
+        this.shape = init.shape ? [...init.shape] : [];
+        this.dtype = init.dtype ?? "null";
+        this.dataString = init.dataString;
+        this.dataNumbers = init.dataNumbers ? [...init.dataNumbers] : undefined;
+        this.dataUbytes = init.dataUbytes ? new Uint8Array(init.dataUbytes) : undefined;
+        this.dataPath = init.dataPath;
+    }
+    child(key) {
+        return this.shape.find((entry) => entry.key === key)?.tensor;
+    }
+    childAt(index) {
+        return this.child(String(index));
+    }
+    hasDenseNumbers() {
+        return Boolean(this.dataNumbers && this.dataNumbers.length > 0);
+    }
+    denseNumbers() {
+        return this.dataNumbers ? [...this.dataNumbers] : [];
+    }
+    scalarNumber() {
+        return this.dataNumbers && this.dataNumbers.length > 0 ? this.dataNumbers[0] : undefined;
+    }
+    scalarBoolean() {
+        if (this.dtype !== "bool") {
+            return undefined;
+        }
+        const value = this.scalarNumber();
+        return value === undefined ? undefined : value !== 0;
+    }
+    scalarString() {
+        return this.dataString;
+    }
+    bytes() {
+        return this.dataUbytes ? new Uint8Array(this.dataUbytes) : undefined;
+    }
+    shapeSizes() {
+        return this.shape.map((entry) => entry.size);
+    }
+}
 export class NDSceneEdgeRuntime {
     pose;
     unpose;
@@ -156,9 +213,9 @@ export class NDSceneRuntime {
                 commitId: readPacketString(packetNode.commitId()) ?? commitId,
                 parentName: readPacketString(packetNode.parentName()) ?? "",
                 edge: new NDSceneEdgeRuntime({
-                    pose: tensorToRuntimeValue(packetEdge?.pose()),
-                    unpose: tensorToRuntimeValue(packetEdge?.unpose()),
-                    content: tensorToRuntimeValue(packetEdge?.content()),
+                    pose: tensorRuntimeFromPacket(packetEdge?.pose()),
+                    unpose: tensorRuntimeFromPacket(packetEdge?.unpose()),
+                    content: tensorRuntimeFromPacket(packetEdge?.content()),
                     childNodeNames,
                 }),
                 edgePacket: clonePacketBytes(packetNode.edgePacketArray()),
@@ -174,7 +231,7 @@ export class NDSceneRuntime {
                 commitId: readPacketString(packetBuffer.commitId()) ?? commitId,
                 format: readPacketString(packetBuffer.format()) ?? "",
                 dataEncoded: clonePacketBytes(packetBuffer.dataEncodedArray()),
-                dataDecoded: tensorToRuntimeValue(packetBuffer.dataDecoded()),
+                dataDecoded: tensorRuntimeFromPacket(packetBuffer.dataDecoded()),
             }));
         }
         scene.rebuildRoots();
@@ -219,9 +276,9 @@ export class NDSceneRuntime {
                 commitId,
                 parentName,
                 edge: new NDSceneEdgeRuntime({
-                    pose: normalizeLegacyValue(nodeJson.pose),
-                    unpose: normalizeLegacyValue(nodeJson.unpose),
-                    content: normalizeLegacyValue(nodeJson.content),
+                    pose: tensorRuntimeFromLegacyValue(nodeJson.pose),
+                    unpose: tensorRuntimeFromLegacyValue(nodeJson.unpose),
+                    content: tensorRuntimeFromLegacyValue(nodeJson.content),
                     childNodeNames: [],
                 }),
             });
@@ -350,9 +407,9 @@ function serializeSceneNode(builder, node) {
     return NDPacketSceneNode.endNDPacketSceneNode(builder);
 }
 function serializeSceneEdge(builder, edge) {
-    const poseOffset = edge.pose !== undefined ? serializeRuntimeValueTensor(builder, edge.pose) : 0;
-    const unposeOffset = edge.unpose !== undefined ? serializeRuntimeValueTensor(builder, edge.unpose) : 0;
-    const contentOffset = edge.content !== undefined ? serializeRuntimeValueTensor(builder, edge.content) : 0;
+    const poseOffset = edge.pose !== undefined ? serializeTensorRuntime(builder, edge.pose) : 0;
+    const unposeOffset = edge.unpose !== undefined ? serializeTensorRuntime(builder, edge.unpose) : 0;
+    const contentOffset = edge.content !== undefined ? serializeTensorRuntime(builder, edge.content) : 0;
     const childOffsets = edge.childNodeNames.map((name) => builder.createString(name));
     const childVectorOffset = childOffsets.length > 0
         ? NDPacketSceneEdge.createChildNodesVector(builder, childOffsets)
@@ -377,7 +434,7 @@ function serializeSceneBuffer(builder, buffer) {
     const commitIdOffset = createOptionalString(builder, buffer.commitId);
     const formatOffset = createOptionalString(builder, buffer.format);
     const encodedOffset = buffer.dataEncoded ? NDPacketBuffer.createDataEncodedVector(builder, buffer.dataEncoded) : 0;
-    const decodedOffset = buffer.dataDecoded !== undefined ? serializeRuntimeValueTensor(builder, buffer.dataDecoded) : 0;
+    const decodedOffset = buffer.dataDecoded !== undefined ? serializeTensorRuntime(builder, buffer.dataDecoded) : 0;
     NDPacketBuffer.startNDPacketBuffer(builder);
     if (pathOffset !== 0) {
         NDPacketBuffer.addPath(builder, pathOffset);
@@ -396,54 +453,17 @@ function serializeSceneBuffer(builder, buffer) {
     }
     return NDPacketBuffer.endNDPacketBuffer(builder);
 }
-function serializeRuntimeValueTensor(builder, value) {
-    const normalizedValue = normalizeLegacyValue(value);
-    if (normalizedValue === undefined) {
-        return 0;
-    }
-    let dtype = "null";
-    let shapeOffset = 0;
-    let dataStringOffset = 0;
-    let dataNumbersOffset = 0;
-    let dataUbytesOffset = 0;
-    if (normalizedValue === null) {
-        dtype = "null";
-    }
-    else if (typeof normalizedValue === "string") {
-        dtype = "string";
-        dataStringOffset = builder.createString(normalizedValue);
-    }
-    else if (typeof normalizedValue === "number") {
-        dtype = "number";
-        dataNumbersOffset = NDPacketTensor.createDataNumbersVector(builder, [normalizedValue]);
-    }
-    else if (typeof normalizedValue === "boolean") {
-        dtype = "bool";
-        dataNumbersOffset = NDPacketTensor.createDataNumbersVector(builder, [normalizedValue ? 1 : 0]);
-    }
-    else if (normalizedValue instanceof Uint8Array) {
-        dtype = "bytes";
-        dataUbytesOffset = NDPacketTensor.createDataUbytesVector(builder, normalizedValue);
-    }
-    else if (Array.isArray(normalizedValue)) {
-        if (normalizedValue.every((entry) => typeof entry === "number")) {
-            dtype = "number[]";
-            dataNumbersOffset = NDPacketTensor.createDataNumbersVector(builder, normalizedValue);
-        }
-        else if (normalizedValue.every((entry) => typeof entry === "boolean")) {
-            dtype = "bool[]";
-            dataNumbersOffset = NDPacketTensor.createDataNumbersVector(builder, normalizedValue.map((entry) => (entry ? 1 : 0)));
-        }
-        else {
-            dtype = "array";
-            shapeOffset = serializeTensorShapeEntries(builder, normalizedValue.map((entry, index) => [String(index), entry]));
-        }
-    }
-    else {
-        dtype = "dict";
-        shapeOffset = serializeTensorShapeEntries(builder, Object.entries(normalizedValue));
-    }
-    const dtypeOffset = builder.createString(dtype);
+function serializeTensorRuntime(builder, tensor) {
+    const shapeOffset = tensor.shape.length > 0 ? serializeTensorShapeEntries(builder, tensor.shape) : 0;
+    const dtypeOffset = builder.createString(tensor.dtype);
+    const dataStringOffset = tensor.dataString ? builder.createString(tensor.dataString) : 0;
+    const dataNumbersOffset = tensor.dataNumbers && tensor.dataNumbers.length > 0
+        ? NDPacketTensor.createDataNumbersVector(builder, tensor.dataNumbers)
+        : 0;
+    const dataUbytesOffset = tensor.dataUbytes && tensor.dataUbytes.length > 0
+        ? NDPacketTensor.createDataUbytesVector(builder, tensor.dataUbytes)
+        : 0;
+    const dataPathOffset = tensor.dataPath ? builder.createString(tensor.dataPath) : 0;
     NDPacketTensor.startNDPacketTensor(builder);
     if (shapeOffset !== 0) {
         NDPacketTensor.addShape(builder, shapeOffset);
@@ -458,17 +478,22 @@ function serializeRuntimeValueTensor(builder, value) {
     if (dataUbytesOffset !== 0) {
         NDPacketTensor.addDataUbytes(builder, dataUbytesOffset);
     }
+    if (dataPathOffset !== 0) {
+        NDPacketTensor.addDataPath(builder, dataPathOffset);
+    }
     return NDPacketTensor.endNDPacketTensor(builder);
 }
 function serializeTensorShapeEntries(builder, entries) {
     const entryOffsets = entries
-        .filter(([, value]) => value !== undefined)
-        .map(([key, value]) => {
-        const tensorOffset = serializeRuntimeValueTensor(builder, value);
-        const keyOffset = builder.createString(key);
+        .filter((entry) => entry.tensor !== undefined || entry.key !== "" || entry.size !== 0)
+        .map((entry) => {
+        const tensorOffset = entry.tensor ? serializeTensorRuntime(builder, entry.tensor) : 0;
+        const keyOffset = entry.key ? builder.createString(entry.key) : 0;
         NDPacketShapeEntry.startNDPacketShapeEntry(builder);
-        NDPacketShapeEntry.addSize(builder, estimateValueSize(value));
-        NDPacketShapeEntry.addKey(builder, keyOffset);
+        NDPacketShapeEntry.addSize(builder, entry.size);
+        if (keyOffset !== 0) {
+            NDPacketShapeEntry.addKey(builder, keyOffset);
+        }
         if (tensorOffset !== 0) {
             NDPacketShapeEntry.addTensor(builder, tensorOffset);
         }
@@ -476,35 +501,9 @@ function serializeTensorShapeEntries(builder, entries) {
     });
     return entryOffsets.length > 0 ? NDPacketTensor.createShapeVector(builder, entryOffsets) : 0;
 }
-function tensorToRuntimeValue(packetTensor) {
+function tensorRuntimeFromPacket(packetTensor) {
     if (!packetTensor) {
         return undefined;
-    }
-    const dtype = readPacketString(packetTensor.dtype()) ?? "";
-    if (dtype === "null") {
-        return null;
-    }
-    if (dtype === "string") {
-        return readPacketString(packetTensor.dataString()) ?? "";
-    }
-    if (dtype === "number") {
-        const numbers = packetTensor.dataNumbersArray();
-        return numbers && numbers.length > 0 ? numbers[0] : 0;
-    }
-    if (dtype === "bool") {
-        const numbers = packetTensor.dataNumbersArray();
-        return Boolean(numbers && numbers.length > 0 ? numbers[0] : 0);
-    }
-    if (dtype === "number[]") {
-        return packetTensor.dataNumbersArray() ? Array.from(packetTensor.dataNumbersArray()) : [];
-    }
-    if (dtype === "bool[]") {
-        return packetTensor.dataNumbersArray()
-            ? Array.from(packetTensor.dataNumbersArray(), (entry) => Boolean(entry))
-            : [];
-    }
-    if (dtype === "bytes") {
-        return clonePacketBytes(packetTensor.dataUbytesArray()) ?? new Uint8Array();
     }
     const shapeEntries = [];
     for (let shapeIndex = 0; shapeIndex < packetTensor.shapeLength(); shapeIndex += 1) {
@@ -512,72 +511,76 @@ function tensorToRuntimeValue(packetTensor) {
         if (!shapeEntry) {
             continue;
         }
-        const entryKey = readPacketString(shapeEntry.key()) ?? String(shapeIndex);
-        shapeEntries.push([entryKey, tensorToRuntimeValue(shapeEntry.tensor()) ?? null]);
+        shapeEntries.push(new NDTensorShapeEntryRuntime({
+            size: shapeEntry.size(),
+            key: readPacketString(shapeEntry.key()) ?? "",
+            tensor: tensorRuntimeFromPacket(shapeEntry.tensor()),
+        }));
     }
-    if (dtype === "array" || (shapeEntries.length > 0 && shapeEntries.every(([key]) => /^\d+$/.test(key)))) {
-        return shapeEntries
-            .sort((left, right) => Number(left[0]) - Number(right[0]))
-            .map(([, value]) => value);
-    }
-    if (dtype === "dict" || shapeEntries.length > 0) {
-        const result = {};
-        for (const [key, value] of shapeEntries) {
-            result[key] = value;
-        }
-        return result;
-    }
-    if (packetTensor.dataNumbersLength() > 0 && packetTensor.dataNumbersArray()) {
-        return Array.from(packetTensor.dataNumbersArray());
-    }
-    if (packetTensor.dataUbytesLength() > 0) {
-        return clonePacketBytes(packetTensor.dataUbytesArray()) ?? new Uint8Array();
-    }
-    if (packetTensor.dataString() !== null) {
-        return readPacketString(packetTensor.dataString()) ?? "";
-    }
-    return null;
+    return new NDTensorRuntime({
+        shape: shapeEntries,
+        dtype: readPacketString(packetTensor.dtype()) ?? "null",
+        dataString: readPacketString(packetTensor.dataString()) ?? undefined,
+        dataNumbers: packetTensor.dataNumbersArray() ? Array.from(packetTensor.dataNumbersArray()) : undefined,
+        dataUbytes: clonePacketBytes(packetTensor.dataUbytesArray()),
+        dataPath: readPacketString(packetTensor.dataPath()) ?? undefined,
+    });
 }
-function normalizeLegacyValue(value) {
+function tensorRuntimeFromLegacyValue(value) {
     if (value === undefined) {
         return undefined;
     }
     if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        return value;
+        return tensorRuntimeFromScalar(value);
     }
     if (value instanceof Uint8Array) {
-        return new Uint8Array(value);
+        return new NDTensorRuntime({
+            dtype: "bytes",
+            dataUbytes: new Uint8Array(value),
+        });
     }
     if (value instanceof ArrayBuffer) {
-        return new Uint8Array(value);
+        return new NDTensorRuntime({
+            dtype: "bytes",
+            dataUbytes: new Uint8Array(value),
+        });
     }
     if (ArrayBuffer.isView(value)) {
-        if (value instanceof Uint8Array) {
-            return new Uint8Array(value);
-        }
         const viewBytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-        return Array.from(viewBytes);
+        return new NDTensorRuntime({
+            dtype: "bytes",
+            dataUbytes: new Uint8Array(viewBytes),
+        });
     }
     if (Array.isArray(value)) {
-        return value
-            .map((entry) => normalizeLegacyValue(entry))
-            .filter((entry) => entry !== undefined);
+        return tensorRuntimeFromLegacyArray(value);
     }
     if (value && typeof value === "object") {
-        const numericArray = numericRecordToArray(value);
+        const record = value;
+        if (isLegacyTensorRecord(record)) {
+            return tensorRuntimeFromLegacyTensorRecord(record);
+        }
+        const numericArray = numericRecordToArray(record);
         if (numericArray) {
-            return numericArray
-                .map((entry) => normalizeLegacyValue(entry))
-                .filter((entry) => entry !== undefined);
+            return tensorRuntimeFromLegacyArray(numericArray);
         }
-        const result = {};
-        for (const [entryKey, entryValue] of Object.entries(value)) {
-            const normalizedEntry = normalizeLegacyValue(entryValue);
-            if (normalizedEntry !== undefined) {
-                result[entryKey] = normalizedEntry;
+        const entries = Object.entries(record)
+            .map(([entryKey, entryValue]) => {
+            const tensor = tensorRuntimeFromLegacyValue(entryValue);
+            if (!tensor) {
+                return null;
             }
-        }
-        return result;
+            return new NDTensorShapeEntryRuntime({
+                key: entryKey,
+                size: estimateTensorSize(tensor),
+                tensor,
+            });
+        })
+            .filter((entry) => entry !== null);
+        return new NDTensorRuntime({
+            dtype: "dict",
+            shape: entries,
+        });
     }
     return undefined;
 }
@@ -594,18 +597,224 @@ function numericRecordToArray(record) {
     }
     return sortedKeys.map((key) => record[key]);
 }
-function estimateValueSize(value) {
-    if (value instanceof Uint8Array) {
-        return value.length;
-    }
-    if (Array.isArray(value)) {
-        return value.length;
-    }
-    if (value && typeof value === "object") {
-        return Object.keys(value).length;
+function tensorRuntimeFromScalar(value) {
+    if (value === null) {
+        return new NDTensorRuntime({ dtype: "null" });
     }
     if (typeof value === "string") {
-        return value.length;
+        return new NDTensorRuntime({
+            dtype: "string",
+            dataString: value,
+        });
+    }
+    if (typeof value === "number") {
+        return new NDTensorRuntime({
+            dtype: "number",
+            dataNumbers: [value],
+        });
+    }
+    return new NDTensorRuntime({
+        dtype: "bool",
+        dataNumbers: [value ? 1 : 0],
+    });
+}
+function tensorRuntimeFromLegacyArray(array) {
+    const denseNumericData = flattenDenseNumericArray(array);
+    if (denseNumericData) {
+        return new NDTensorRuntime({
+            dtype: denseNumericData.dtype,
+            shape: denseNumericData.shape.map((size) => new NDTensorShapeEntryRuntime({ size })),
+            dataNumbers: denseNumericData.data,
+        });
+    }
+    const entries = array
+        .map((entry, index) => {
+        const tensor = tensorRuntimeFromLegacyValue(entry);
+        if (!tensor) {
+            return null;
+        }
+        return new NDTensorShapeEntryRuntime({
+            key: String(index),
+            size: estimateTensorSize(tensor),
+            tensor,
+        });
+    })
+        .filter((entry) => entry !== null);
+    return new NDTensorRuntime({
+        dtype: "array",
+        shape: entries,
+    });
+}
+function isLegacyTensorRecord(record) {
+    return ("shape" in record
+        || "dtype" in record
+        || "data" in record
+        || "data_string" in record
+        || "data_numbers" in record
+        || "data_ubytes" in record
+        || "data_path" in record);
+}
+function tensorRuntimeFromLegacyTensorRecord(record) {
+    const legacyShape = Array.isArray(record.shape)
+        ? record.shape
+            .map((entry) => (typeof entry === "number" && Number.isFinite(entry) ? entry : null))
+            .filter((entry) => entry !== null)
+        : [];
+    const dtype = typeof record.dtype === "string" ? record.dtype : inferLegacyTensorDtype(record);
+    const tensor = new NDTensorRuntime({
+        dtype,
+        shape: legacyShape.map((size) => new NDTensorShapeEntryRuntime({ size })),
+        dataPath: typeof record.data_path === "string" ? record.data_path : undefined,
+    });
+    const explicitNumbers = extractLegacyNumericData(record.data_numbers);
+    const explicitBytes = extractLegacyByteData(record.data_ubytes);
+    if (typeof record.data_string === "string") {
+        tensor.dataString = record.data_string;
+        return tensor;
+    }
+    if (explicitNumbers) {
+        tensor.dataNumbers = explicitNumbers;
+        return tensor;
+    }
+    if (explicitBytes) {
+        tensor.dataUbytes = explicitBytes;
+        return tensor;
+    }
+    if ("data" in record) {
+        const dataValue = normalizeLegacyTensorDataValue(record.data);
+        if (typeof dataValue === "string") {
+            tensor.dataString = dataValue;
+            return tensor;
+        }
+        const denseNumeric = flattenDenseNumericDataValue(dataValue);
+        if (denseNumeric) {
+            tensor.dataNumbers = denseNumeric.data;
+            if (tensor.shape.length === 0) {
+                tensor.shape = denseNumeric.shape.map((size) => new NDTensorShapeEntryRuntime({ size }));
+            }
+            if (record.dtype === undefined) {
+                tensor.dtype = denseNumeric.dtype;
+            }
+            return tensor;
+        }
+        const bytes = extractLegacyByteData(dataValue);
+        if (bytes) {
+            tensor.dataUbytes = bytes;
+            if (record.dtype === undefined) {
+                tensor.dtype = "bytes";
+            }
+            return tensor;
+        }
+    }
+    return tensor;
+}
+function inferLegacyTensorDtype(record) {
+    if (typeof record.data_string === "string") {
+        return "string";
+    }
+    if (record.data_numbers !== undefined) {
+        return "number";
+    }
+    if (record.data_ubytes !== undefined) {
+        return "bytes";
+    }
+    if ("data" in record) {
+        const dataValue = normalizeLegacyTensorDataValue(record.data);
+        if (typeof dataValue === "string") {
+            return "string";
+        }
+        if (flattenDenseNumericDataValue(dataValue)) {
+            return "number";
+        }
+        if (extractLegacyByteData(dataValue)) {
+            return "bytes";
+        }
+    }
+    return "null";
+}
+function extractLegacyNumericData(value) {
+    const dense = flattenDenseNumericDataValue(normalizeLegacyTensorDataValue(value));
+    return dense ? dense.data : undefined;
+}
+function extractLegacyByteData(value) {
+    if (value instanceof Uint8Array) {
+        return new Uint8Array(value);
+    }
+    if (value instanceof ArrayBuffer) {
+        return new Uint8Array(value);
+    }
+    if (ArrayBuffer.isView(value)) {
+        return new Uint8Array(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+    }
+    return undefined;
+}
+function normalizeLegacyTensorDataValue(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return value;
+    }
+    const numericArray = numericRecordToArray(value);
+    return numericArray ?? value;
+}
+function flattenDenseNumericArray(array) {
+    return flattenDenseNumericDataValue(array);
+}
+function flattenDenseNumericDataValue(value) {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+    return flattenDenseNumericRecursive(value);
+}
+function flattenDenseNumericRecursive(value) {
+    if (!Array.isArray(value)) {
+        if (typeof value === "number") {
+            return { dtype: "number", shape: [], data: [value] };
+        }
+        if (typeof value === "boolean") {
+            return { dtype: "bool", shape: [], data: [value ? 1 : 0] };
+        }
+        return null;
+    }
+    const childResults = value.map((entry) => flattenDenseNumericRecursive(entry));
+    if (childResults.some((entry) => entry === null)) {
+        return null;
+    }
+    const typedChildren = childResults;
+    const childShape = typedChildren.length > 0 ? typedChildren[0].shape : [];
+    const childDtype = typedChildren.length > 0 ? typedChildren[0].dtype : "number";
+    for (const child of typedChildren) {
+        if (child.dtype !== childDtype) {
+            return null;
+        }
+        if (child.shape.length !== childShape.length) {
+            return null;
+        }
+        for (let index = 0; index < child.shape.length; index += 1) {
+            if (child.shape[index] !== childShape[index]) {
+                return null;
+            }
+        }
+    }
+    return {
+        dtype: childDtype,
+        shape: [value.length, ...childShape],
+        data: typedChildren.flatMap((child) => child.data),
+    };
+}
+function estimateTensorSize(tensor) {
+    if (tensor.shape.length > 0 && tensor.shape.every((entry) => entry.key === "" && entry.tensor === undefined)) {
+        return tensor.shape.reduce((product, entry) => product * Math.max(entry.size, 1), 1);
+    }
+    if (tensor.dataNumbers && tensor.dataNumbers.length > 0) {
+        return tensor.dataNumbers.length;
+    }
+    if (tensor.dataUbytes && tensor.dataUbytes.length > 0) {
+        return tensor.dataUbytes.length;
+    }
+    if (tensor.dataString) {
+        return tensor.dataString.length;
+    }
+    if (tensor.shape.length > 0) {
+        return tensor.shape.length;
     }
     return 1;
 }

@@ -405,25 +405,20 @@
         statusElement.dataset.state = state;
       }
 
-      function flattenTensorData(data) {
-        if (Array.isArray(data)) {
-          return data.slice();
+      function readTensorNumbers(tensor) {
+        if (!tensor || typeof tensor.denseNumbers !== "function") {
+          return [];
         }
-        if (data && typeof data === "object") {
-          return Object.keys(data)
-            .sort((left, right) => Number(left) - Number(right))
-            .map((key) => data[key]);
-        }
-        return [];
+        return tensor.denseNumbers();
       }
 
       function matrixFromRuntimePose(poseValue) {
         const matrix = new THREE.Matrix4();
-        if (!poseValue || typeof poseValue !== "object" || Array.isArray(poseValue)) {
+        if (!poseValue) {
           return matrix.identity();
         }
 
-        const data = flattenTensorData(poseValue.data);
+        const data = readTensorNumbers(poseValue);
         if (data.length !== 16) {
           return matrix.identity();
         }
@@ -436,15 +431,18 @@
       }
 
       function buildMeshFromContent(content, label) {
-        if (!content || typeof content !== "object" || Array.isArray(content)) {
-          return null;
-        }
-        if (!content.vertices || !content.indices) {
+        if (!content || typeof content.child !== "function") {
           return null;
         }
 
-        const vertices = flattenTensorData(content.vertices.data);
-        const indices = flattenTensorData(content.indices.data);
+        const verticesTensor = content.child("vertices");
+        const indicesTensor = content.child("indices");
+        if (!verticesTensor || !indicesTensor) {
+          return null;
+        }
+
+        const vertices = readTensorNumbers(verticesTensor);
+        const indices = readTensorNumbers(indicesTensor);
         if (vertices.length === 0 || indices.length === 0) {
           return null;
         }
@@ -595,8 +593,9 @@
         const boardNode = runtimeScene.getNode("board");
         const stoneCount = boardNode ? boardNode.edge.childNodeNames.length : 0;
         const meshStone = runtimeScene.getNode("mesh_stone");
-        const vertexCount = meshStone && meshStone.edge.content && meshStone.edge.content.vertices
-          ? Math.floor(flattenTensorData(meshStone.edge.content.vertices.data).length / 3)
+        const meshVerticesTensor = meshStone?.edge.content?.child("vertices");
+        const vertexCount = meshVerticesTensor
+          ? Math.floor(readTensorNumbers(meshVerticesTensor).length / 3)
           : 0;
 
         sceneStatsElement.textContent = `${runtimeScene.nodesByName.size} nodes · ${stoneCount} stones · ${vertexCount} verts · ${bufferBytes} bytes`;
