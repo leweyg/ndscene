@@ -12,6 +12,7 @@
   },
   "include": [
     "ts/ndsceneFlatbuffers.ts",
+    "ts/ndsceneLegacyJson.ts",
     "ts/ndsceneRuntime.ts",
     "ts/ndscenepy/flatbuffers/generated/**/*.ts",
     "ts/node_modules/flatbuffers/**/*.ts"
