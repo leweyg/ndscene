@@ -89,6 +89,29 @@
         margin-top: 0.8rem;
       }
 
+      .timeline {
+        margin-top: 0.95rem;
+      }
+
+      .timeline-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 0.8rem;
+        margin-bottom: 0.45rem;
+        color: var(--text-muted);
+        font-size: 0.95rem;
+      }
+
+      .timeline-head strong {
+        color: var(--text-main);
+      }
+
+      .timeline input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
       .chip {
         padding: 0.35rem 0.65rem;
         border-radius: 999px;
@@ -145,12 +168,19 @@
       <div class="hud">
         <section class="panel">
           <h1>ndscene viewcore</h1>
-          <p id="status" data-state="loading">Loading <code>../../json/freed_go/view_1_scene.json</code>...</p>
+          <p id="status" data-state="loading">Loading timeline commits...</p>
           <div class="meta">
-            <div class="chip" id="scene-path">scene: ../../json/freed_go/view_1_scene.json</div>
+            <div class="chip" id="scene-path">timeline: views 1, 2, 3</div>
             <div class="chip" id="scene-stats">waiting for scene</div>
             <div class="chip">drag to orbit</div>
             <div class="chip">wheel or pinch to zoom</div>
+          </div>
+          <div class="timeline">
+            <div class="timeline-head">
+              <strong>Timeline</strong>
+              <span id="commit-label">waiting for commits</span>
+            </div>
+            <input type="range" id="commit-slider" min="0" max="0" step="1" value="0" disabled>
           </div>
         </section>
         <section class="panel actions">
@@ -172,16 +202,43 @@
       import { NDSceneRuntime } from "../../js/ndsceneRuntime.js";
 
       const THREE = window.THREE;
-      const SCENE_URL = "../../json/freed_go/view_1_scene.json";
-      const sceneResourceUrl = new URL(SCENE_URL, window.location.href);
+      const SCENE_SOURCES = [
+        {
+          url: "../../json/freed_go/view_1_scene.json",
+          commitId: "freed_go_view_1",
+          label: "View 1",
+          createdAt: "2026-04-22T00:00:00.000Z",
+        },
+        {
+          url: "../../json/freed_go/view_2_scene.json",
+          commitId: "freed_go_view_2",
+          label: "View 2",
+          createdAt: "2026-04-22T00:00:01.000Z",
+        },
+        {
+          url: "../../json/freed_go/view_3_scene.json",
+          commitId: "freed_go_view_3",
+          label: "View 3",
+          createdAt: "2026-04-22T00:00:02.000Z",
+        },
+      ];
+      const sceneResourceUrlByCommitId = new Map(
+        SCENE_SOURCES.map((source) => [source.commitId, new URL(source.url, window.location.href)]),
+      );
+      const sceneSourceByCommitId = new Map(
+        SCENE_SOURCES.map((source) => [source.commitId, source]),
+      );
 
       if (!THREE) {
         throw new Error("THREE was not loaded before the viewcore module ran.");
       }
 
       const viewport = document.getElementById("viewport");
+      const scenePathElement = document.getElementById("scene-path");
       const statusElement = document.getElementById("status");
       const sceneStatsElement = document.getElementById("scene-stats");
+      const commitLabelElement = document.getElementById("commit-label");
+      const commitSliderElement = document.getElementById("commit-slider");
       const resetViewButton = document.getElementById("reset-view");
       const frameSceneButton = document.getElementById("frame-scene");
 
@@ -218,6 +275,7 @@
       let sceneRadius = 25;
       let activeRuntime = null;
       let activeBufferBytes = null;
+      let activeRenderToken = 0;
 
       class BasicOrbitControls {
         constructor(cameraRef, domElement, onChange) {
@@ -447,7 +505,8 @@
       }
 
       function resolveSceneBufferUrl(buffer) {
-        return new URL(buffer.path, sceneResourceUrl).href;
+        const baseUrl = sceneResourceUrlByCommitId.get(buffer.commitId) || window.location.href;
+        return new URL(buffer.path, baseUrl).href;
       }
 
       function applyTextureColorSpace(texture) {
@@ -737,7 +796,34 @@
         };
       }
 
-      function updateSceneMetrics(runtimeScene, bufferBytes) {
+      function formatCommitLabel(runtime, commitId) {
+        const commits = runtime.getOrderedCommits();
+        const commitIndex = commits.findIndex((commit) => commit.commitId === commitId);
+        const commit = commits[commitIndex];
+        if (!commit) {
+          return "missing commit";
+        }
+        const source = sceneSourceByCommitId.get(commit.commitId);
+        const displayLabel = source ? source.label : commit.commitId;
+        return `${displayLabel} (${commitIndex + 1}/${commits.length})`;
+      }
+
+      function updateTimelineUi(runtime) {
+        const commits = runtime.getOrderedCommits();
+        const activeCommitId = runtime.activeCommit.commitId;
+        const activeIndex = Math.max(
+          commits.findIndex((commit) => commit.commitId === activeCommitId),
+          0,
+        );
+        commitSliderElement.disabled = commits.length <= 1;
+        commitSliderElement.min = "0";
+        commitSliderElement.max = String(Math.max(commits.length - 1, 0));
+        commitSliderElement.value = String(activeIndex);
+        commitLabelElement.textContent = formatCommitLabel(runtime, activeCommitId);
+      }
+
+      function updateSceneMetrics(runtime, bufferBytes) {
+        const runtimeScene = runtime.activeScene;
         worldRoot.updateMatrixWorld(true);
         sceneBounds = new THREE.Box3().setFromObject(worldRoot);
         if (sceneBounds.isEmpty()) {
@@ -754,44 +840,103 @@
         const meshStone = runtimeScene.getNode("mesh_stone");
         const meshVerticesTensor = meshStone?.edge.content?.child("vertices");
         const bufferCount = runtimeScene.buffersByPath.size;
+        const commitCount = runtime.getOrderedCommits().length;
         const vertexCount = meshVerticesTensor
           ? Math.floor(readTensorNumbers(meshVerticesTensor).length / 3)
           : 0;
 
-        sceneStatsElement.textContent = `${runtimeScene.nodesByName.size} nodes · ${stoneCount} stones · ${vertexCount} verts · ${bufferCount} buffers · ${bufferBytes} bytes`;
+        sceneStatsElement.textContent = `${commitCount} commits · ${runtimeScene.nodesByName.size} nodes · ${stoneCount} stones · ${vertexCount} verts · ${bufferCount} buffers · ${bufferBytes} bytes`;
+      }
+
+      async function renderActiveCommit(resetView = true) {
+        if (!activeRuntime) {
+          return;
+        }
+
+        const renderToken = ++activeRenderToken;
+        const runtimeScene = activeRuntime.activeScene;
+        const pendingTextureLoads = [];
+
+        updateTimelineUi(activeRuntime);
+        clearObjectChildren(worldRoot);
+        for (const rootNode of runtimeScene.getRootNodes()) {
+          worldRoot.add(buildRuntimeNode(rootNode, runtimeScene, pendingTextureLoads));
+        }
+
+        updateSceneMetrics(activeRuntime, activeBufferBytes ? activeBufferBytes.length : 0);
+        frameSurface();
+        if (resetView) {
+          configureCamera(runtimeScene);
+        }
+
+        const activeCommitLabel = formatCommitLabel(activeRuntime, activeRuntime.activeCommit.commitId);
+        if (pendingTextureLoads.length > 0) {
+          setStatus(`Showing ${activeCommitLabel}; streaming ${pendingTextureLoads.length} image buffer(s)...`, "loading");
+          await Promise.allSettled(pendingTextureLoads);
+          if (renderToken !== activeRenderToken) {
+            return;
+          }
+        }
+        setStatus(`Showing ${activeCommitLabel} from combined timeline packet`, "ready");
+      }
+
+      async function onTimelineScrub() {
+        if (!activeRuntime) {
+          return;
+        }
+
+        const commits = activeRuntime.getOrderedCommits();
+        const nextIndex = clamp(
+          Math.round(Number(commitSliderElement.value) || 0),
+          0,
+          Math.max(commits.length - 1, 0),
+        );
+        const nextCommit = commits[nextIndex];
+        if (!nextCommit) {
+          return;
+        }
+
+        if (activeRuntime.activeCommit.commitId === nextCommit.commitId) {
+          updateTimelineUi(activeRuntime);
+          return;
+        }
+
+        activeRuntime.setActiveCommit(nextCommit.commitId);
+        await renderActiveCommit(true);
       }
 
       async function loadScene() {
-        setStatus(`Loading ${SCENE_URL}...`, "loading");
+        const timelinePaths = SCENE_SOURCES.map((source) => source.url).join(" -> ");
+        scenePathElement.textContent = `timeline: ${timelinePaths}`;
+        setStatus(`Loading ${SCENE_SOURCES.length} timeline commits...`, "loading");
 
-        const response = await fetch(SCENE_URL, { headers: { Accept: "application/json" } });
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status} while fetching ${SCENE_URL}`);
+        const responses = await Promise.all(
+          SCENE_SOURCES.map((source) => fetch(source.url, { headers: { Accept: "application/json" } })),
+        );
+        for (let responseIndex = 0; responseIndex < responses.length; responseIndex += 1) {
+          if (!responses[responseIndex].ok) {
+            throw new Error(`HTTP ${responses[responseIndex].status} while fetching ${SCENE_SOURCES[responseIndex].url}`);
+          }
         }
 
-        const legacySceneJson = await response.json();
-        const runtimeFromJson = NDSceneRuntime.fromLegacyJson(legacySceneJson, {
-          commitId: "freed_go_view_1",
-          createdByModelId: "browser/viewcore",
-        });
+        const legacyCommits = await Promise.all(
+          responses.map((response) => response.json()),
+        );
+        const runtimeFromJson = NDSceneRuntime.fromLegacyJsonSequence(
+          legacyCommits.map((legacySceneJson, index) => ({
+            sceneJson: legacySceneJson,
+            commitId: SCENE_SOURCES[index].commitId,
+            commitPreviousId: index > 0 ? SCENE_SOURCES[index - 1].commitId : "",
+            commitInputId: index > 0 ? SCENE_SOURCES[index - 1].commitId : SCENE_SOURCES[index].commitId,
+            createdAt: SCENE_SOURCES[index].createdAt,
+            createdByModelId: "browser/viewcore",
+          })),
+        );
 
         activeBufferBytes = runtimeFromJson.toFlatbufferBuffer();
         activeRuntime = NDSceneRuntime.fromFlatbufferBuffer(activeBufferBytes);
-        const pendingTextureLoads = [];
-
-        clearObjectChildren(worldRoot);
-        for (const rootNode of activeRuntime.activeScene.getRootNodes()) {
-          worldRoot.add(buildRuntimeNode(rootNode, activeRuntime.activeScene, pendingTextureLoads));
-        }
-
-        updateSceneMetrics(activeRuntime.activeScene, activeBufferBytes.length);
-        frameSurface();
-        configureCamera(activeRuntime.activeScene);
-        if (pendingTextureLoads.length > 0) {
-          setStatus(`Loaded ${SCENE_URL}; streaming ${pendingTextureLoads.length} image buffer(s)...`, "loading");
-          await Promise.allSettled(pendingTextureLoads);
-        }
-        setStatus(`Loaded ${SCENE_URL} via JSON -> FlatBuffer -> runtime`, "ready");
+        updateTimelineUi(activeRuntime);
+        await renderActiveCommit(true);
       }
 
       function resetView() {
@@ -823,6 +968,12 @@
       controls = new BasicOrbitControls(camera, renderer.domElement, () => {});
       resetViewButton.addEventListener("click", resetView);
       frameSceneButton.addEventListener("click", frameSceneFromCurrentTarget);
+      commitSliderElement.addEventListener("input", () => {
+        onTimelineScrub().catch((error) => {
+          console.error(error);
+          setStatus(`Unable to scrub timeline: ${error.message}`, "error");
+        });
+      });
       window.addEventListener("resize", resize);
 
       resize();
@@ -832,6 +983,8 @@
         console.error(error);
         setStatus(`Unable to load scene: ${error.message}`, "error");
         sceneStatsElement.textContent = "scene unavailable";
+        commitLabelElement.textContent = "timeline unavailable";
+        commitSliderElement.disabled = true;
         frameSurface();
         controls.setView(new THREE.Vector3(48, 42, 52), new THREE.Vector3(0, 0, 0));
       });

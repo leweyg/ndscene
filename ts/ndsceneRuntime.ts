@@ -13,7 +13,10 @@ import {
 } from "./ndsceneFlatbuffers.js";
 
 const ROOT_PACKET_MAGIC = "NDSN";
+const TIMELINE_MANIFEST_PATH = "__ndscene_runtime__/timeline_manifest.json";
+const TIMELINE_MANIFEST_FORMAT = "application/vnd.ndscene.timeline+json";
 const STRING_DECODER = new TextDecoder();
+const STRING_ENCODER = new TextEncoder();
 
 export type NDLegacySceneNodeJson = {
   name?: string;
@@ -38,8 +41,32 @@ export type NDSceneRuntimeFromJsonOptions = {
   createdByModelId?: string;
 };
 
+export type NDSceneRuntimeFromJsonCommitInput = NDSceneRuntimeFromJsonOptions & {
+  commitId: string;
+  sceneJson: NDLegacySceneJson;
+};
+
 type NDLegacyImportContext = {
   registerBuffer: (path: string, format?: string) => NDSceneBufferRuntime;
+};
+
+type NDSceneTimelineManifestCommit = {
+  commitId: string;
+  commitPreviousId: string;
+  commitInputId: string;
+  createdAt: string;
+  createdByModelId: string;
+  changedNodeNames: string[];
+  deletedNodeNames: string[];
+  changedBufferPaths: string[];
+  deletedBufferPaths: string[];
+};
+
+type NDSceneTimelineManifest = {
+  version: 1;
+  activeCommitId: string;
+  commitOrder: string[];
+  commits: NDSceneTimelineManifestCommit[];
 };
 
 export class NDTensorShapeEntryRuntime {
@@ -271,13 +298,34 @@ export class NDSceneCommitRuntime {
 
 export class NDSceneRuntime {
   commitsById = new Map<string, NDSceneCommitRuntime>();
+  commitOrder: string[] = [];
   activeCommitId: string | null = null;
 
   addCommit(commit: NDSceneCommitRuntime, setActive = false): void {
+    if (!this.commitsById.has(commit.commitId)) {
+      this.commitOrder.push(commit.commitId);
+    }
     this.commitsById.set(commit.commitId, commit);
     if (setActive || this.activeCommitId === null) {
       this.activeCommitId = commit.commitId;
     }
+  }
+
+  getCommit(commitId: string): NDSceneCommitRuntime | undefined {
+    return this.commitsById.get(commitId);
+  }
+
+  getOrderedCommits(): NDSceneCommitRuntime[] {
+    return this.commitOrder
+      .map((commitId) => this.getCommit(commitId))
+      .filter((commit): commit is NDSceneCommitRuntime => Boolean(commit));
+  }
+
+  setActiveCommit(commitId: string): void {
+    if (!this.commitsById.has(commitId)) {
+      throw new Error(`Commit "${commitId}" is missing from the runtime.`);
+    }
+    this.activeCommitId = commitId;
   }
 
   get activeCommit(): NDSceneCommitRuntime {
@@ -297,7 +345,7 @@ export class NDSceneRuntime {
   }
 
   toFlatbufferBuffer(): Uint8Array {
-    return serializeCommitToFlatbuffer(this.activeCommit);
+    return serializeRuntimeToFlatbuffer(this);
   }
 
   static fromFlatbufferBuffer(buffer: ArrayBuffer | ArrayBufferView): NDSceneRuntime {
@@ -308,40 +356,16 @@ export class NDSceneRuntime {
       throw new Error("FlatBuffer packet does not contain a scene or commit payload.");
     }
 
-    const scene = new NDSceneGraphRuntime();
     const commitId = readPacketString(commitPacket?.commitId()) ?? "commit_from_buffer";
+    const sceneNodes: NDSceneNodeRuntime[] = [];
+    const sceneBuffers: NDSceneBufferRuntime[] = [];
 
     for (let nodeIndex = 0; nodeIndex < scenePacket.nodesLength(); nodeIndex += 1) {
       const packetNode = scenePacket.nodes(nodeIndex);
       if (!packetNode) {
         continue;
       }
-
-      const packetEdge = packetNode.edgeScene();
-      const childNodeNames: string[] = [];
-      if (packetEdge) {
-        for (let childIndex = 0; childIndex < packetEdge.childNodesLength(); childIndex += 1) {
-          const childName = readPacketString(packetEdge.childNodes(childIndex));
-          if (childName) {
-            childNodeNames.push(childName);
-          }
-        }
-      }
-
-      scene.addNode(
-        new NDSceneNodeRuntime({
-          name: readPacketString(packetNode.name()) ?? `node_${nodeIndex}`,
-          commitId: readPacketString(packetNode.commitId()) ?? commitId,
-          parentName: readPacketString(packetNode.parentName()) ?? "",
-          edge: new NDSceneEdgeRuntime({
-            pose: tensorRuntimeFromPacket(packetEdge?.pose()),
-            unpose: tensorRuntimeFromPacket(packetEdge?.unpose()),
-            content: tensorRuntimeFromPacket(packetEdge?.content()),
-            childNodeNames,
-          }),
-          edgePacket: clonePacketBytes(packetNode.edgePacketArray()),
-        }),
-      );
+      sceneNodes.push(packetSceneNodeToRuntime(packetNode, commitId, nodeIndex));
     }
 
     for (let bufferIndex = 0; bufferIndex < scenePacket.buffersLength(); bufferIndex += 1) {
@@ -349,18 +373,21 @@ export class NDSceneRuntime {
       if (!packetBuffer) {
         continue;
       }
-
-      scene.addBuffer(
-        new NDSceneBufferRuntime({
-          path: readPacketString(packetBuffer.path()) ?? `buffer_${bufferIndex}`,
-          commitId: readPacketString(packetBuffer.commitId()) ?? commitId,
-          format: readPacketString(packetBuffer.format()) ?? "",
-          dataEncoded: clonePacketBytes(packetBuffer.dataEncodedArray()),
-          dataDecoded: tensorRuntimeFromPacket(packetBuffer.dataDecoded()),
-        }),
-      );
+      sceneBuffers.push(packetSceneBufferToRuntime(packetBuffer, commitId, bufferIndex));
     }
 
+    const manifestBuffer = sceneBuffers.find((sceneBuffer) => sceneBuffer.path === TIMELINE_MANIFEST_PATH);
+    if (manifestBuffer) {
+      return runtimeFromTimelinePacket(commitPacket, sceneNodes, sceneBuffers, manifestBuffer);
+    }
+
+    const scene = new NDSceneGraphRuntime();
+    for (const sceneNode of sceneNodes) {
+      scene.addNode(sceneNode);
+    }
+    for (const sceneBuffer of sceneBuffers) {
+      scene.addBuffer(sceneBuffer);
+    }
     scene.rebuildRoots();
 
     const runtime = new NDSceneRuntime();
@@ -376,6 +403,47 @@ export class NDSceneRuntime {
       }),
       true,
     );
+    return runtime;
+  }
+
+  static fromLegacyJsonSequence(commits: NDSceneRuntimeFromJsonCommitInput[]): NDSceneRuntime {
+    if (commits.length === 0) {
+      throw new Error("Legacy JSON commit sequence is empty.");
+    }
+
+    const runtime = new NDSceneRuntime();
+    let previousScene: NDSceneGraphRuntime | null = null;
+    let previousCommitId = "";
+
+    for (let commitIndex = 0; commitIndex < commits.length; commitIndex += 1) {
+      const commitInput = commits[commitIndex];
+      const importedRuntime = NDSceneRuntime.fromLegacyJson(commitInput.sceneJson, {
+        commitId: commitInput.commitId,
+        commitPreviousId: commitInput.commitPreviousId ?? previousCommitId,
+        commitInputId: commitInput.commitInputId ?? (previousCommitId || commitInput.commitId),
+        createdAt: commitInput.createdAt,
+        createdByModelId: commitInput.createdByModelId,
+      });
+      const importedCommit = importedRuntime.activeCommit;
+      const sharedScene = shareSceneGraphSnapshot(previousScene, importedCommit.scene);
+
+      runtime.addCommit(
+        new NDSceneCommitRuntime({
+          commitId: importedCommit.commitId,
+          commitPreviousId: importedCommit.commitPreviousId,
+          commitInputId: importedCommit.commitInputId,
+          createdAt: importedCommit.createdAt,
+          createdByModelId: importedCommit.createdByModelId,
+          scene: sharedScene,
+          packet: importedCommit.packet,
+        }),
+        commitIndex === commits.length - 1,
+      );
+
+      previousScene = sharedScene;
+      previousCommitId = importedCommit.commitId;
+    }
+
     return runtime;
   }
 
@@ -511,8 +579,75 @@ export class NDSceneRuntime {
 }
 
 function serializeCommitToFlatbuffer(commit: NDSceneCommitRuntime): Uint8Array {
+  return serializeCommitPacketToFlatbuffer(
+    commit,
+    [...commit.scene.nodesByName.values()],
+    [...commit.scene.buffersByPath.values()],
+  );
+}
+
+function serializeRuntimeToFlatbuffer(runtime: NDSceneRuntime): Uint8Array {
+  const orderedCommits = runtime.getOrderedCommits();
+  if (orderedCommits.length <= 1) {
+    return serializeCommitToFlatbuffer(runtime.activeCommit);
+  }
+
+  const timelineNodes: NDSceneNodeRuntime[] = [];
+  const timelineBuffers: NDSceneBufferRuntime[] = [];
+  const manifestCommits: NDSceneTimelineManifestCommit[] = [];
+  let previousScene: NDSceneGraphRuntime | null = null;
+
+  for (const commit of orderedCommits) {
+    const diff = diffSceneGraphs(previousScene, commit.scene);
+    manifestCommits.push({
+      commitId: commit.commitId,
+      commitPreviousId: commit.commitPreviousId,
+      commitInputId: commit.commitInputId,
+      createdAt: commit.createdAt,
+      createdByModelId: commit.createdByModelId,
+      changedNodeNames: diff.changedNodeNames,
+      deletedNodeNames: diff.deletedNodeNames,
+      changedBufferPaths: diff.changedBufferPaths,
+      deletedBufferPaths: diff.deletedBufferPaths,
+    });
+
+    for (const nodeName of diff.changedNodeNames) {
+      const changedNode = commit.scene.getNode(nodeName);
+      if (!changedNode) {
+        throw new Error(`Commit "${commit.commitId}" is missing changed node "${nodeName}".`);
+      }
+      timelineNodes.push(changedNode);
+    }
+
+    for (const bufferPath of diff.changedBufferPaths) {
+      const changedBuffer = commit.scene.getBuffer(bufferPath);
+      if (!changedBuffer) {
+        throw new Error(`Commit "${commit.commitId}" is missing changed buffer "${bufferPath}".`);
+      }
+      timelineBuffers.push(changedBuffer);
+    }
+
+    previousScene = commit.scene;
+  }
+
+  const manifest: NDSceneTimelineManifest = {
+    version: 1,
+    activeCommitId: runtime.activeCommit.commitId,
+    commitOrder: orderedCommits.map((commit) => commit.commitId),
+    commits: manifestCommits,
+  };
+  timelineBuffers.push(createTimelineManifestBuffer(runtime.activeCommit.commitId, manifest));
+
+  return serializeCommitPacketToFlatbuffer(runtime.activeCommit, timelineNodes, timelineBuffers);
+}
+
+function serializeCommitPacketToFlatbuffer(
+  commit: NDSceneCommitRuntime,
+  sceneNodes: ReadonlyArray<NDSceneNodeRuntime>,
+  sceneBuffers: ReadonlyArray<NDSceneBufferRuntime>,
+): Uint8Array {
   const builder = new Builder(1024);
-  const sceneOffset = serializeSceneGraph(builder, commit.scene);
+  const sceneOffset = serializeSceneEntries(builder, sceneNodes, sceneBuffers);
 
   const commitIdOffset = createOptionalString(builder, commit.commitId);
   const commitPreviousIdOffset = createOptionalString(builder, commit.commitPreviousId);
@@ -553,8 +688,16 @@ function serializeCommitToFlatbuffer(commit: NDSceneCommitRuntime): Uint8Array {
 }
 
 function serializeSceneGraph(builder: Builder, scene: NDSceneGraphRuntime): number {
-  const nodeOffsets = [...scene.nodesByName.values()].map((node) => serializeSceneNode(builder, node));
-  const bufferOffsets = [...scene.buffersByPath.values()].map((buffer) => serializeSceneBuffer(builder, buffer));
+  return serializeSceneEntries(builder, [...scene.nodesByName.values()], [...scene.buffersByPath.values()]);
+}
+
+function serializeSceneEntries(
+  builder: Builder,
+  nodes: ReadonlyArray<NDSceneNodeRuntime>,
+  buffers: ReadonlyArray<NDSceneBufferRuntime>,
+): number {
+  const nodeOffsets = nodes.map((node) => serializeSceneNode(builder, node));
+  const bufferOffsets = buffers.map((buffer) => serializeSceneBuffer(builder, buffer));
 
   const nodesVectorOffset = nodeOffsets.length > 0
     ? NDPacketSceneUpdate.createNodesVector(builder, nodeOffsets)
@@ -1122,6 +1265,354 @@ function inferBufferFormatFromPath(path: string): string {
     return "image/tiff";
   }
   return "application/octet-stream";
+}
+
+function packetSceneNodeToRuntime(
+  packetNode: NDPacketSceneNode,
+  defaultCommitId: string,
+  nodeIndex: number,
+): NDSceneNodeRuntime {
+  const packetEdge = packetNode.edgeScene();
+  const childNodeNames: string[] = [];
+  if (packetEdge) {
+    for (let childIndex = 0; childIndex < packetEdge.childNodesLength(); childIndex += 1) {
+      const childName = readPacketString(packetEdge.childNodes(childIndex));
+      if (childName) {
+        childNodeNames.push(childName);
+      }
+    }
+  }
+
+  return new NDSceneNodeRuntime({
+    name: readPacketString(packetNode.name()) ?? `node_${nodeIndex}`,
+    commitId: readPacketString(packetNode.commitId()) ?? defaultCommitId,
+    parentName: readPacketString(packetNode.parentName()) ?? "",
+    edge: new NDSceneEdgeRuntime({
+      pose: tensorRuntimeFromPacket(packetEdge?.pose()),
+      unpose: tensorRuntimeFromPacket(packetEdge?.unpose()),
+      content: tensorRuntimeFromPacket(packetEdge?.content()),
+      childNodeNames,
+    }),
+    edgePacket: clonePacketBytes(packetNode.edgePacketArray()),
+  });
+}
+
+function packetSceneBufferToRuntime(
+  packetBuffer: NDPacketBuffer,
+  defaultCommitId: string,
+  bufferIndex: number,
+): NDSceneBufferRuntime {
+  return new NDSceneBufferRuntime({
+    path: readPacketString(packetBuffer.path()) ?? `buffer_${bufferIndex}`,
+    commitId: readPacketString(packetBuffer.commitId()) ?? defaultCommitId,
+    format: readPacketString(packetBuffer.format()) ?? "",
+    dataEncoded: clonePacketBytes(packetBuffer.dataEncodedArray()),
+    dataDecoded: tensorRuntimeFromPacket(packetBuffer.dataDecoded()),
+  });
+}
+
+function createTimelineManifestBuffer(
+  commitId: string,
+  manifest: NDSceneTimelineManifest,
+): NDSceneBufferRuntime {
+  const manifestJson = JSON.stringify(manifest);
+  return new NDSceneBufferRuntime({
+    path: TIMELINE_MANIFEST_PATH,
+    commitId,
+    format: TIMELINE_MANIFEST_FORMAT,
+    dataEncoded: STRING_ENCODER.encode(manifestJson),
+    dataDecoded: new NDTensorRuntime({
+      dtype: "string",
+      dataString: manifestJson,
+    }),
+  });
+}
+
+function parseTimelineManifestBuffer(buffer: NDSceneBufferRuntime): NDSceneTimelineManifest {
+  const manifestJson = buffer.dataDecoded?.scalarString() ?? (buffer.dataEncoded ? STRING_DECODER.decode(buffer.dataEncoded) : "");
+  if (!manifestJson) {
+    throw new Error("Timeline manifest buffer is empty.");
+  }
+
+  const manifest = JSON.parse(manifestJson) as NDSceneTimelineManifest;
+  if (manifest.version !== 1) {
+    throw new Error(`Unsupported timeline manifest version "${String((manifest as { version?: unknown }).version)}".`);
+  }
+  return manifest;
+}
+
+function runtimeFromTimelinePacket(
+  commitPacket: NDPacketSceneCommit | null | undefined,
+  sceneNodes: ReadonlyArray<NDSceneNodeRuntime>,
+  sceneBuffers: ReadonlyArray<NDSceneBufferRuntime>,
+  manifestBuffer: NDSceneBufferRuntime,
+): NDSceneRuntime {
+  const manifest = parseTimelineManifestBuffer(manifestBuffer);
+  const commitInfoById = new Map(manifest.commits.map((commit) => [commit.commitId, commit] as const));
+  const nodeVersionsByCommitId = new Map<string, Map<string, NDSceneNodeRuntime>>();
+  const bufferVersionsByCommitId = new Map<string, Map<string, NDSceneBufferRuntime>>();
+
+  for (const sceneNode of sceneNodes) {
+    let commitNodes = nodeVersionsByCommitId.get(sceneNode.commitId);
+    if (!commitNodes) {
+      commitNodes = new Map<string, NDSceneNodeRuntime>();
+      nodeVersionsByCommitId.set(sceneNode.commitId, commitNodes);
+    }
+    commitNodes.set(sceneNode.name, sceneNode);
+  }
+
+  for (const sceneBuffer of sceneBuffers) {
+    if (sceneBuffer.path === TIMELINE_MANIFEST_PATH) {
+      continue;
+    }
+    let commitBuffers = bufferVersionsByCommitId.get(sceneBuffer.commitId);
+    if (!commitBuffers) {
+      commitBuffers = new Map<string, NDSceneBufferRuntime>();
+      bufferVersionsByCommitId.set(sceneBuffer.commitId, commitBuffers);
+    }
+    commitBuffers.set(sceneBuffer.path, sceneBuffer);
+  }
+
+  const runtime = new NDSceneRuntime();
+  const topLevelCommitId = readPacketString(commitPacket?.commitId()) ?? manifest.activeCommitId;
+  let previousScene: NDSceneGraphRuntime | null = null;
+
+  for (const commitId of manifest.commitOrder) {
+    const commitInfo = commitInfoById.get(commitId);
+    if (!commitInfo) {
+      throw new Error(`Timeline manifest is missing commit metadata for "${commitId}".`);
+    }
+
+    const scene = cloneSceneGraphReferences(previousScene);
+    const commitNodes = nodeVersionsByCommitId.get(commitId) ?? new Map<string, NDSceneNodeRuntime>();
+    const commitBuffers = bufferVersionsByCommitId.get(commitId) ?? new Map<string, NDSceneBufferRuntime>();
+
+    for (const deletedNodeName of commitInfo.deletedNodeNames) {
+      scene.nodesByName.delete(deletedNodeName);
+    }
+    for (const deletedBufferPath of commitInfo.deletedBufferPaths) {
+      scene.buffersByPath.delete(deletedBufferPath);
+    }
+    for (const changedNodeName of commitInfo.changedNodeNames) {
+      const changedNode = commitNodes.get(changedNodeName);
+      if (!changedNode) {
+        throw new Error(`Timeline packet is missing node "${changedNodeName}" for commit "${commitId}".`);
+      }
+      scene.nodesByName.set(changedNodeName, changedNode);
+    }
+    for (const changedBufferPath of commitInfo.changedBufferPaths) {
+      const changedBuffer = commitBuffers.get(changedBufferPath);
+      if (!changedBuffer) {
+        throw new Error(`Timeline packet is missing buffer "${changedBufferPath}" for commit "${commitId}".`);
+      }
+      scene.buffersByPath.set(changedBufferPath, changedBuffer);
+    }
+    scene.rebuildRoots();
+
+    runtime.addCommit(
+      new NDSceneCommitRuntime({
+        commitId: commitInfo.commitId,
+        commitPreviousId: commitInfo.commitPreviousId,
+        commitInputId: commitInfo.commitInputId,
+        createdAt: commitInfo.createdAt,
+        createdByModelId: commitInfo.createdByModelId,
+        scene,
+        packet: commitId === topLevelCommitId ? clonePacketBytes(commitPacket?.packetArray()) : undefined,
+      }),
+      commitId === manifest.activeCommitId,
+    );
+
+    previousScene = scene;
+  }
+
+  if (!runtime.activeCommitId && manifest.commitOrder.length > 0) {
+    runtime.setActiveCommit(manifest.commitOrder[manifest.commitOrder.length - 1]);
+  }
+
+  return runtime;
+}
+
+function cloneSceneGraphReferences(scene: NDSceneGraphRuntime | null): NDSceneGraphRuntime {
+  const clonedScene = new NDSceneGraphRuntime();
+  if (!scene) {
+    return clonedScene;
+  }
+
+  clonedScene.nodesByName = new Map(scene.nodesByName);
+  clonedScene.buffersByPath = new Map(scene.buffersByPath);
+  clonedScene.rootNodeNames = [...scene.rootNodeNames];
+  return clonedScene;
+}
+
+function shareSceneGraphSnapshot(
+  previousScene: NDSceneGraphRuntime | null,
+  nextScene: NDSceneGraphRuntime,
+): NDSceneGraphRuntime {
+  const sharedScene = new NDSceneGraphRuntime();
+
+  for (const [nodeName, sceneNode] of nextScene.nodesByName) {
+    const previousNode = previousScene?.getNode(nodeName);
+    sharedScene.nodesByName.set(
+      nodeName,
+      previousNode && sceneNodeEquivalent(previousNode, sceneNode) ? previousNode : sceneNode,
+    );
+  }
+
+  for (const [bufferPath, sceneBuffer] of nextScene.buffersByPath) {
+    const previousBuffer = previousScene?.getBuffer(bufferPath);
+    sharedScene.buffersByPath.set(
+      bufferPath,
+      previousBuffer && sceneBufferEquivalent(previousBuffer, sceneBuffer) ? previousBuffer : sceneBuffer,
+    );
+  }
+
+  sharedScene.rootNodeNames = [...nextScene.rootNodeNames];
+  return sharedScene;
+}
+
+function diffSceneGraphs(
+  previousScene: NDSceneGraphRuntime | null,
+  nextScene: NDSceneGraphRuntime,
+): {
+  changedNodeNames: string[];
+  deletedNodeNames: string[];
+  changedBufferPaths: string[];
+  deletedBufferPaths: string[];
+} {
+  const changedNodeNames: string[] = [];
+  const changedBufferPaths: string[] = [];
+  const deletedNodeNames = previousScene
+    ? [...previousScene.nodesByName.keys()].filter((nodeName) => !nextScene.nodesByName.has(nodeName))
+    : [];
+  const deletedBufferPaths = previousScene
+    ? [...previousScene.buffersByPath.keys()].filter((bufferPath) => !nextScene.buffersByPath.has(bufferPath))
+    : [];
+
+  for (const [nodeName, sceneNode] of nextScene.nodesByName) {
+    const previousNode = previousScene?.getNode(nodeName);
+    if (!previousNode || !sceneNodeEquivalent(previousNode, sceneNode)) {
+      changedNodeNames.push(nodeName);
+    }
+  }
+
+  for (const [bufferPath, sceneBuffer] of nextScene.buffersByPath) {
+    const previousBuffer = previousScene?.getBuffer(bufferPath);
+    if (!previousBuffer || !sceneBufferEquivalent(previousBuffer, sceneBuffer)) {
+      changedBufferPaths.push(bufferPath);
+    }
+  }
+
+  return {
+    changedNodeNames,
+    deletedNodeNames,
+    changedBufferPaths,
+    deletedBufferPaths,
+  };
+}
+
+function sceneNodeEquivalent(left: NDSceneNodeRuntime, right: NDSceneNodeRuntime): boolean {
+  if (left === right) {
+    return true;
+  }
+  return (
+    left.name === right.name
+    && left.parentName === right.parentName
+    && tensorEquivalent(left.edge.pose, right.edge.pose)
+    && tensorEquivalent(left.edge.unpose, right.edge.unpose)
+    && tensorEquivalent(left.edge.content, right.edge.content)
+    && stringArrayEquivalent(left.edge.childNodeNames, right.edge.childNodeNames)
+    && uint8ArrayEquivalent(left.edgePacket, right.edgePacket)
+  );
+}
+
+function sceneBufferEquivalent(left: NDSceneBufferRuntime, right: NDSceneBufferRuntime): boolean {
+  if (left === right) {
+    return true;
+  }
+  return (
+    left.path === right.path
+    && left.format === right.format
+    && uint8ArrayEquivalent(left.dataEncoded, right.dataEncoded)
+    && tensorEquivalent(left.dataDecoded, right.dataDecoded)
+  );
+}
+
+function tensorEquivalent(left?: NDTensorRuntime, right?: NDTensorRuntime): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return left === right;
+  }
+  return (
+    left.dtype === right.dtype
+    && left.dataString === right.dataString
+    && left.dataPath === right.dataPath
+    && numberArrayEquivalent(left.dataNumbers, right.dataNumbers)
+    && uint8ArrayEquivalent(left.dataUbytes, right.dataUbytes)
+    && shapeEntriesEquivalent(left.shape, right.shape)
+  );
+}
+
+function shapeEntriesEquivalent(
+  left: ReadonlyArray<NDTensorShapeEntryRuntime>,
+  right: ReadonlyArray<NDTensorShapeEntryRuntime>,
+): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (
+      left[index].size !== right[index].size
+      || left[index].key !== right[index].key
+      || !tensorEquivalent(left[index].tensor, right[index].tensor)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function stringArrayEquivalent(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function numberArrayEquivalent(left?: ReadonlyArray<number>, right?: ReadonlyArray<number>): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function uint8ArrayEquivalent(left?: Uint8Array, right?: Uint8Array): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function createOptionalString(builder: Builder, value: string): number {
