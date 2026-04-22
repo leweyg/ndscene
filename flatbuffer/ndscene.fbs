@@ -1,109 +1,73 @@
 namespace ndscenepy.flatbuffers.generated.ndscene;
 
-file_identifier "NDSC";
+file_identifier "NDSN";
 
 table NDBuffer {
-  path:string;
-  format:string;
-  buffer:[ubyte];
-  tensor:NDTensor;
+  path: string; // path/file-name/string-key to this buffer (primary key)
+  commit_id: string; // version id of this buffer (primary key, along with path and scene_id)
+  format: string; // dtype or MIME of the data
+  data_encoded: [ubyte]; // format/MIME compressed data
+  data_decoded: NDTensor; // decoded tensor of the data
+}
+
+// Entry within a tensors 'shape' array, supports recursion for JSON type embeddings.
+table NDShapeEntry {
+  size: uint; // product of this dimension
+  key: string; // dimension name or model name
+  tensor: NDTensor; // recursivly embedded tensors
 }
 
 table NDTensor {
-  key:string;
-  size:ulong;
-  shape:[NDTensor];
-  dtype:string;
-  buffer_embed:[ubyte];
-  buffer_encoded:NDBuffer;
-  buffer_path:string;
+  shape: [NDShapeEntry]; // sub-dimensional data/sizes
+  dtype:string; // name of instrinsic type (float32, uint8, str, dict, etc.)
+  data_string: string; // decoded as string (check this first)
+  data_decoded: [ubyte]; // decoded raw bytes (check this second)
+  data_path: string; // path of encoded buffer (NDBuffer, check this last)
 }
 
-table NDObject {
-  object_id:string;
-  parent_object_id:string;
-  pose:NDTensor;
-  unpose:NDTensor;
-  content:NDTensor;
+// Link from NDSceneNode to it's parent (often stored in binary format)
+table NDSceneEdge {
+  pose: NDTensor; // local to parent transform: value = pose * concat( content, children )
+  unpose: NDTensor; // parent to local transform: ontent = unpose * value
+  content: NDTensor; // local space content (appends to existing content)
+  children_node_ids: [string]; // references to shared children (instanced / multiple parents)
+  children_inline: [NDSceneEdge]; // inline child nodes only, not addressable
 }
 
-table NDSceneState {
-  root_object_id:string;
-  objects:[NDObject];
-  buffers:[NDBuffer];
+// Represents a node in the scene graph (stored in database table, containing binary parent_edge)
+table NDSceneNode {
+  node_id: string; // unique per scene_id (primary key)
+  commit_id: string; // unique per update (primary key)
+  parent_node_id: string; // singular parent node id (used in top-level nodes only, no instancing)
+
+  parent_edge_inline: NDSceneEdge; // content and transform from local to parent space
+  parent_edge_packet: [ubyte]; // ndpacket containing the NDSceneEdge as an NDPacket.nd_edge
 }
 
-table NDSceneId {
-  scene_id: string;
-  commit_id_latest: string;
+// Represents an update to the scene buffers and nodes (including edges)
+table NDSceneUpdate {
+  nodes: [NDSceneNode]; // nodes (including their edges)
+  buffers: [NDBuffer]; // buffers
 }
 
 table NDSceneCommit {
-  commit_id: string;
-  commit_parent_id: string;
+  commit_id: string; // id of this commit (primary key)
+  commit_previous_id: string; // id of previous commit in the merged sequence
+  commit_snapshot_id: string; // id of snapshot to play back from (scene_update_packet is complete)
+  commit_input_id: string; // id originally used to start this update (same as previous_id if no parallel updates)
 
-  patch_data: [ubyte];
-  patch_scene: NDSceneUpdate;
-  patch_model_events: [NDModelEvent];
-  patch_labels: [NDModelLabel];
+  created_at: string;
+  created_by_model_id: string;
 
-  created_at:string;
-}
-
-table NDModelTraceOp {
-  op_index:uint;
-  op_type:string;
-  op_data_json:string;
-}
-
-table NDModelEvent {
-  model_id:string;
-  model_event_id:string;
-  commit_id:string;
-
-  target_object_id:string;
-  source_object_ids:[string];
-
-  created_at:string;
-  trace:[NDModelTraceOp];
-}
-
-table NDModelLabel {
-  label_id:string;
-  model_id:string;
-  model_event_id:string;
-
-  label_author: string;
-  label_json:string;
-  label_notes:string;
-
-  input_commit_id:string;
-  result_commit_id:string;
-  result_object_id:string;
-
-  notes:string;
-  created_at:string;
-}
-
-table NDReviewState {
-  target_scene_id: NDSceneId;
-  target_scene_state: NDSceneState;
-  view_scene_id: NDSceneId;
-  view_scene_state: NDSceneState;
+  scene_state: NDSceneUpdate; // scene state when applicable
+  scene_update_packet: [ubyte]; // NDPacket.nd_scene (the update packet itself)
 }
 
 table NDPacket {
-  union ndtype {
-    nd_buffer:NDBuffer;
-    nd_tensor:NDTensor;
-    nd_object:NDObject;
-    nd_scene:NDScene;
-    nd_scene_id:NDSceneId;
+  union nd_type {
+    nd_edge:NDSceneEdge;
+    nd_scene:NDSceneUpdate;
     nd_commit:NDSceneCommit;
-
-    model_event:NDModelEvent;
-    model_label:NDModelLabel;
-    model_review:NDReviewState;
   }
 }
 
