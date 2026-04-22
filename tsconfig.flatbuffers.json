@@ -11,6 +11,7 @@
     "lib": ["ES2022", "DOM"]
   },
   "include": [
+    "ts/ndsceneDebugWeb.ts",
     "ts/ndsceneFlatbuffers.ts",
     "ts/ndsceneLegacyJson.ts",
     "ts/ndsceneRuntime.ts",
