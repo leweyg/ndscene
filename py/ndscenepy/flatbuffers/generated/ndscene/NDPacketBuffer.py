@@ -6,50 +6,50 @@ import flatbuffers
 from flatbuffers.compat import import_numpy
 np = import_numpy()
 
-class NDBuffer(object):
+class NDPacketBuffer(object):
     __slots__ = ['_tab']
 
     @classmethod
     def GetRootAs(cls, buf, offset=0):
         n = flatbuffers.encode.Get(flatbuffers.packer.uoffset, buf, offset)
-        x = NDBuffer()
+        x = NDPacketBuffer()
         x.Init(buf, n + offset)
         return x
 
     @classmethod
-    def GetRootAsNDBuffer(cls, buf, offset=0):
+    def GetRootAsNDPacketBuffer(cls, buf, offset=0):
         """This method is deprecated. Please switch to GetRootAs."""
         return cls.GetRootAs(buf, offset)
     @classmethod
-    def NDBufferBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+    def NDPacketBufferBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
         return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x4E\x44\x53\x4E", size_prefixed=size_prefixed)
 
-    # NDBuffer
+    # NDPacketBuffer
     def Init(self, buf, pos):
         self._tab = flatbuffers.table.Table(buf, pos)
 
-    # NDBuffer
+    # NDPacketBuffer
     def Path(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         if o != 0:
             return self._tab.String(o + self._tab.Pos)
         return None
 
-    # NDBuffer
+    # NDPacketBuffer
     def CommitId(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
             return self._tab.String(o + self._tab.Pos)
         return None
 
-    # NDBuffer
+    # NDPacketBuffer
     def Format(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
         if o != 0:
             return self._tab.String(o + self._tab.Pos)
         return None
 
-    # NDBuffer
+    # NDPacketBuffer
     def DataEncoded(self, j):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
@@ -57,80 +57,80 @@ class NDBuffer(object):
             return self._tab.Get(flatbuffers.number_types.Uint8Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 1))
         return 0
 
-    # NDBuffer
+    # NDPacketBuffer
     def DataEncodedAsNumpy(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.GetVectorAsNumpy(flatbuffers.number_types.Uint8Flags, o)
         return 0
 
-    # NDBuffer
+    # NDPacketBuffer
     def DataEncodedLength(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
 
-    # NDBuffer
+    # NDPacketBuffer
     def DataEncodedIsNone(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         return o == 0
 
-    # NDBuffer
+    # NDPacketBuffer
     def DataDecoded(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             x = self._tab.Indirect(o + self._tab.Pos)
-            from ndscenepy.flatbuffers.generated.ndscene.NDTensor import NDTensor
-            obj = NDTensor()
+            from ndscenepy.flatbuffers.generated.ndscene.NDPacketTensor import NDPacketTensor
+            obj = NDPacketTensor()
             obj.Init(self._tab.Bytes, x)
             return obj
         return None
 
-def NDBufferStart(builder):
+def NDPacketBufferStart(builder):
     builder.StartObject(5)
 
 def Start(builder):
-    NDBufferStart(builder)
+    NDPacketBufferStart(builder)
 
-def NDBufferAddPath(builder, path):
+def NDPacketBufferAddPath(builder, path):
     builder.PrependUOffsetTRelativeSlot(0, flatbuffers.number_types.UOffsetTFlags.py_type(path), 0)
 
 def AddPath(builder, path):
-    NDBufferAddPath(builder, path)
+    NDPacketBufferAddPath(builder, path)
 
-def NDBufferAddCommitId(builder, commitId):
+def NDPacketBufferAddCommitId(builder, commitId):
     builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(commitId), 0)
 
 def AddCommitId(builder, commitId):
-    NDBufferAddCommitId(builder, commitId)
+    NDPacketBufferAddCommitId(builder, commitId)
 
-def NDBufferAddFormat(builder, format):
+def NDPacketBufferAddFormat(builder, format):
     builder.PrependUOffsetTRelativeSlot(2, flatbuffers.number_types.UOffsetTFlags.py_type(format), 0)
 
 def AddFormat(builder, format):
-    NDBufferAddFormat(builder, format)
+    NDPacketBufferAddFormat(builder, format)
 
-def NDBufferAddDataEncoded(builder, dataEncoded):
+def NDPacketBufferAddDataEncoded(builder, dataEncoded):
     builder.PrependUOffsetTRelativeSlot(3, flatbuffers.number_types.UOffsetTFlags.py_type(dataEncoded), 0)
 
 def AddDataEncoded(builder, dataEncoded):
-    NDBufferAddDataEncoded(builder, dataEncoded)
+    NDPacketBufferAddDataEncoded(builder, dataEncoded)
 
-def NDBufferStartDataEncodedVector(builder, numElems):
+def NDPacketBufferStartDataEncodedVector(builder, numElems):
     return builder.StartVector(1, numElems, 1)
 
 def StartDataEncodedVector(builder, numElems):
-    return NDBufferStartDataEncodedVector(builder, numElems)
+    return NDPacketBufferStartDataEncodedVector(builder, numElems)
 
-def NDBufferAddDataDecoded(builder, dataDecoded):
+def NDPacketBufferAddDataDecoded(builder, dataDecoded):
     builder.PrependUOffsetTRelativeSlot(4, flatbuffers.number_types.UOffsetTFlags.py_type(dataDecoded), 0)
 
 def AddDataDecoded(builder, dataDecoded):
-    NDBufferAddDataDecoded(builder, dataDecoded)
+    NDPacketBufferAddDataDecoded(builder, dataDecoded)
 
-def NDBufferEnd(builder):
+def NDPacketBufferEnd(builder):
     return builder.EndObject()
 
 def End(builder):
-    return NDBufferEnd(builder)
+    return NDPacketBufferEnd(builder)

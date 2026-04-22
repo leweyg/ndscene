@@ -6,131 +6,131 @@ import flatbuffers
 from flatbuffers.compat import import_numpy
 np = import_numpy()
 
-class NDSceneNode(object):
+class NDPacketSceneNode(object):
     __slots__ = ['_tab']
 
     @classmethod
     def GetRootAs(cls, buf, offset=0):
         n = flatbuffers.encode.Get(flatbuffers.packer.uoffset, buf, offset)
-        x = NDSceneNode()
+        x = NDPacketSceneNode()
         x.Init(buf, n + offset)
         return x
 
     @classmethod
-    def GetRootAsNDSceneNode(cls, buf, offset=0):
+    def GetRootAsNDPacketSceneNode(cls, buf, offset=0):
         """This method is deprecated. Please switch to GetRootAs."""
         return cls.GetRootAs(buf, offset)
     @classmethod
-    def NDSceneNodeBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+    def NDPacketSceneNodeBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
         return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x4E\x44\x53\x4E", size_prefixed=size_prefixed)
 
-    # NDSceneNode
+    # NDPacketSceneNode
     def Init(self, buf, pos):
         self._tab = flatbuffers.table.Table(buf, pos)
 
-    # NDSceneNode
-    def NodeId(self):
+    # NDPacketSceneNode
+    def Name(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         if o != 0:
             return self._tab.String(o + self._tab.Pos)
         return None
 
-    # NDSceneNode
+    # NDPacketSceneNode
     def CommitId(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
             return self._tab.String(o + self._tab.Pos)
         return None
 
-    # NDSceneNode
-    def ParentNodeId(self):
+    # NDPacketSceneNode
+    def ParentName(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
         if o != 0:
             return self._tab.String(o + self._tab.Pos)
         return None
 
-    # NDSceneNode
-    def ParentEdgeInline(self):
+    # NDPacketSceneNode
+    def EdgeScene(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(10))
         if o != 0:
             x = self._tab.Indirect(o + self._tab.Pos)
-            from ndscenepy.flatbuffers.generated.ndscene.NDSceneEdge import NDSceneEdge
-            obj = NDSceneEdge()
+            from ndscenepy.flatbuffers.generated.ndscene.NDPacketSceneEdge import NDPacketSceneEdge
+            obj = NDPacketSceneEdge()
             obj.Init(self._tab.Bytes, x)
             return obj
         return None
 
-    # NDSceneNode
-    def ParentEdgePacket(self, j):
+    # NDPacketSceneNode
+    def EdgePacket(self, j):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             a = self._tab.Vector(o)
             return self._tab.Get(flatbuffers.number_types.Uint8Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 1))
         return 0
 
-    # NDSceneNode
-    def ParentEdgePacketAsNumpy(self):
+    # NDPacketSceneNode
+    def EdgePacketAsNumpy(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             return self._tab.GetVectorAsNumpy(flatbuffers.number_types.Uint8Flags, o)
         return 0
 
-    # NDSceneNode
-    def ParentEdgePacketLength(self):
+    # NDPacketSceneNode
+    def EdgePacketLength(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
 
-    # NDSceneNode
-    def ParentEdgePacketIsNone(self):
+    # NDPacketSceneNode
+    def EdgePacketIsNone(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(12))
         return o == 0
 
-def NDSceneNodeStart(builder):
+def NDPacketSceneNodeStart(builder):
     builder.StartObject(5)
 
 def Start(builder):
-    NDSceneNodeStart(builder)
+    NDPacketSceneNodeStart(builder)
 
-def NDSceneNodeAddNodeId(builder, nodeId):
-    builder.PrependUOffsetTRelativeSlot(0, flatbuffers.number_types.UOffsetTFlags.py_type(nodeId), 0)
+def NDPacketSceneNodeAddName(builder, name):
+    builder.PrependUOffsetTRelativeSlot(0, flatbuffers.number_types.UOffsetTFlags.py_type(name), 0)
 
-def AddNodeId(builder, nodeId):
-    NDSceneNodeAddNodeId(builder, nodeId)
+def AddName(builder, name):
+    NDPacketSceneNodeAddName(builder, name)
 
-def NDSceneNodeAddCommitId(builder, commitId):
+def NDPacketSceneNodeAddCommitId(builder, commitId):
     builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(commitId), 0)
 
 def AddCommitId(builder, commitId):
-    NDSceneNodeAddCommitId(builder, commitId)
+    NDPacketSceneNodeAddCommitId(builder, commitId)
 
-def NDSceneNodeAddParentNodeId(builder, parentNodeId):
-    builder.PrependUOffsetTRelativeSlot(2, flatbuffers.number_types.UOffsetTFlags.py_type(parentNodeId), 0)
+def NDPacketSceneNodeAddParentName(builder, parentName):
+    builder.PrependUOffsetTRelativeSlot(2, flatbuffers.number_types.UOffsetTFlags.py_type(parentName), 0)
 
-def AddParentNodeId(builder, parentNodeId):
-    NDSceneNodeAddParentNodeId(builder, parentNodeId)
+def AddParentName(builder, parentName):
+    NDPacketSceneNodeAddParentName(builder, parentName)
 
-def NDSceneNodeAddParentEdgeInline(builder, parentEdgeInline):
-    builder.PrependUOffsetTRelativeSlot(3, flatbuffers.number_types.UOffsetTFlags.py_type(parentEdgeInline), 0)
+def NDPacketSceneNodeAddEdgeScene(builder, edgeScene):
+    builder.PrependUOffsetTRelativeSlot(3, flatbuffers.number_types.UOffsetTFlags.py_type(edgeScene), 0)
 
-def AddParentEdgeInline(builder, parentEdgeInline):
-    NDSceneNodeAddParentEdgeInline(builder, parentEdgeInline)
+def AddEdgeScene(builder, edgeScene):
+    NDPacketSceneNodeAddEdgeScene(builder, edgeScene)
 
-def NDSceneNodeAddParentEdgePacket(builder, parentEdgePacket):
-    builder.PrependUOffsetTRelativeSlot(4, flatbuffers.number_types.UOffsetTFlags.py_type(parentEdgePacket), 0)
+def NDPacketSceneNodeAddEdgePacket(builder, edgePacket):
+    builder.PrependUOffsetTRelativeSlot(4, flatbuffers.number_types.UOffsetTFlags.py_type(edgePacket), 0)
 
-def AddParentEdgePacket(builder, parentEdgePacket):
-    NDSceneNodeAddParentEdgePacket(builder, parentEdgePacket)
+def AddEdgePacket(builder, edgePacket):
+    NDPacketSceneNodeAddEdgePacket(builder, edgePacket)
 
-def NDSceneNodeStartParentEdgePacketVector(builder, numElems):
+def NDPacketSceneNodeStartEdgePacketVector(builder, numElems):
     return builder.StartVector(1, numElems, 1)
 
-def StartParentEdgePacketVector(builder, numElems):
-    return NDSceneNodeStartParentEdgePacketVector(builder, numElems)
+def StartEdgePacketVector(builder, numElems):
+    return NDPacketSceneNodeStartEdgePacketVector(builder, numElems)
 
-def NDSceneNodeEnd(builder):
+def NDPacketSceneNodeEnd(builder):
     return builder.EndObject()
 
 def End(builder):
-    return NDSceneNodeEnd(builder)
+    return NDPacketSceneNodeEnd(builder)

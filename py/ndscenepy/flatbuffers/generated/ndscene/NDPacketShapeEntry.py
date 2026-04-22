@@ -6,79 +6,79 @@ import flatbuffers
 from flatbuffers.compat import import_numpy
 np = import_numpy()
 
-class NDShapeEntry(object):
+class NDPacketShapeEntry(object):
     __slots__ = ['_tab']
 
     @classmethod
     def GetRootAs(cls, buf, offset=0):
         n = flatbuffers.encode.Get(flatbuffers.packer.uoffset, buf, offset)
-        x = NDShapeEntry()
+        x = NDPacketShapeEntry()
         x.Init(buf, n + offset)
         return x
 
     @classmethod
-    def GetRootAsNDShapeEntry(cls, buf, offset=0):
+    def GetRootAsNDPacketShapeEntry(cls, buf, offset=0):
         """This method is deprecated. Please switch to GetRootAs."""
         return cls.GetRootAs(buf, offset)
     @classmethod
-    def NDShapeEntryBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+    def NDPacketShapeEntryBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
         return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x4E\x44\x53\x4E", size_prefixed=size_prefixed)
 
-    # NDShapeEntry
+    # NDPacketShapeEntry
     def Init(self, buf, pos):
         self._tab = flatbuffers.table.Table(buf, pos)
 
-    # NDShapeEntry
+    # NDPacketShapeEntry
     def Size(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         if o != 0:
             return self._tab.Get(flatbuffers.number_types.Uint32Flags, o + self._tab.Pos)
         return 0
 
-    # NDShapeEntry
+    # NDPacketShapeEntry
     def Key(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
             return self._tab.String(o + self._tab.Pos)
         return None
 
-    # NDShapeEntry
+    # NDPacketShapeEntry
     def Tensor(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(8))
         if o != 0:
             x = self._tab.Indirect(o + self._tab.Pos)
-            from ndscenepy.flatbuffers.generated.ndscene.NDTensor import NDTensor
-            obj = NDTensor()
+            from ndscenepy.flatbuffers.generated.ndscene.NDPacketTensor import NDPacketTensor
+            obj = NDPacketTensor()
             obj.Init(self._tab.Bytes, x)
             return obj
         return None
 
-def NDShapeEntryStart(builder):
+def NDPacketShapeEntryStart(builder):
     builder.StartObject(3)
 
 def Start(builder):
-    NDShapeEntryStart(builder)
+    NDPacketShapeEntryStart(builder)
 
-def NDShapeEntryAddSize(builder, size):
+def NDPacketShapeEntryAddSize(builder, size):
     builder.PrependUint32Slot(0, size, 0)
 
 def AddSize(builder, size):
-    NDShapeEntryAddSize(builder, size)
+    NDPacketShapeEntryAddSize(builder, size)
 
-def NDShapeEntryAddKey(builder, key):
+def NDPacketShapeEntryAddKey(builder, key):
     builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(key), 0)
 
 def AddKey(builder, key):
-    NDShapeEntryAddKey(builder, key)
+    NDPacketShapeEntryAddKey(builder, key)
 
-def NDShapeEntryAddTensor(builder, tensor):
+def NDPacketShapeEntryAddTensor(builder, tensor):
     builder.PrependUOffsetTRelativeSlot(2, flatbuffers.number_types.UOffsetTFlags.py_type(tensor), 0)
 
 def AddTensor(builder, tensor):
-    NDShapeEntryAddTensor(builder, tensor)
+    NDPacketShapeEntryAddTensor(builder, tensor)
 
-def NDShapeEntryEnd(builder):
+def NDPacketShapeEntryEnd(builder):
     return builder.EndObject()
 
 def End(builder):
-    return NDShapeEntryEnd(builder)
+    return NDPacketShapeEntryEnd(builder)

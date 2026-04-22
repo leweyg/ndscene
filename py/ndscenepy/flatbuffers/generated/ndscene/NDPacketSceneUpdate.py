@@ -6,110 +6,110 @@ import flatbuffers
 from flatbuffers.compat import import_numpy
 np = import_numpy()
 
-class NDSceneUpdate(object):
+class NDPacketSceneUpdate(object):
     __slots__ = ['_tab']
 
     @classmethod
     def GetRootAs(cls, buf, offset=0):
         n = flatbuffers.encode.Get(flatbuffers.packer.uoffset, buf, offset)
-        x = NDSceneUpdate()
+        x = NDPacketSceneUpdate()
         x.Init(buf, n + offset)
         return x
 
     @classmethod
-    def GetRootAsNDSceneUpdate(cls, buf, offset=0):
+    def GetRootAsNDPacketSceneUpdate(cls, buf, offset=0):
         """This method is deprecated. Please switch to GetRootAs."""
         return cls.GetRootAs(buf, offset)
     @classmethod
-    def NDSceneUpdateBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
+    def NDPacketSceneUpdateBufferHasIdentifier(cls, buf, offset, size_prefixed=False):
         return flatbuffers.util.BufferHasIdentifier(buf, offset, b"\x4E\x44\x53\x4E", size_prefixed=size_prefixed)
 
-    # NDSceneUpdate
+    # NDPacketSceneUpdate
     def Init(self, buf, pos):
         self._tab = flatbuffers.table.Table(buf, pos)
 
-    # NDSceneUpdate
+    # NDPacketSceneUpdate
     def Nodes(self, j):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         if o != 0:
             x = self._tab.Vector(o)
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
-            from ndscenepy.flatbuffers.generated.ndscene.NDSceneNode import NDSceneNode
-            obj = NDSceneNode()
+            from ndscenepy.flatbuffers.generated.ndscene.NDPacketSceneNode import NDPacketSceneNode
+            obj = NDPacketSceneNode()
             obj.Init(self._tab.Bytes, x)
             return obj
         return None
 
-    # NDSceneUpdate
+    # NDPacketSceneUpdate
     def NodesLength(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
 
-    # NDSceneUpdate
+    # NDPacketSceneUpdate
     def NodesIsNone(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(4))
         return o == 0
 
-    # NDSceneUpdate
+    # NDPacketSceneUpdate
     def Buffers(self, j):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
             x = self._tab.Vector(o)
             x += flatbuffers.number_types.UOffsetTFlags.py_type(j) * 4
             x = self._tab.Indirect(x)
-            from ndscenepy.flatbuffers.generated.ndscene.NDBuffer import NDBuffer
-            obj = NDBuffer()
+            from ndscenepy.flatbuffers.generated.ndscene.NDPacketBuffer import NDPacketBuffer
+            obj = NDPacketBuffer()
             obj.Init(self._tab.Bytes, x)
             return obj
         return None
 
-    # NDSceneUpdate
+    # NDPacketSceneUpdate
     def BuffersLength(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
 
-    # NDSceneUpdate
+    # NDPacketSceneUpdate
     def BuffersIsNone(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         return o == 0
 
-def NDSceneUpdateStart(builder):
+def NDPacketSceneUpdateStart(builder):
     builder.StartObject(2)
 
 def Start(builder):
-    NDSceneUpdateStart(builder)
+    NDPacketSceneUpdateStart(builder)
 
-def NDSceneUpdateAddNodes(builder, nodes):
+def NDPacketSceneUpdateAddNodes(builder, nodes):
     builder.PrependUOffsetTRelativeSlot(0, flatbuffers.number_types.UOffsetTFlags.py_type(nodes), 0)
 
 def AddNodes(builder, nodes):
-    NDSceneUpdateAddNodes(builder, nodes)
+    NDPacketSceneUpdateAddNodes(builder, nodes)
 
-def NDSceneUpdateStartNodesVector(builder, numElems):
+def NDPacketSceneUpdateStartNodesVector(builder, numElems):
     return builder.StartVector(4, numElems, 4)
 
 def StartNodesVector(builder, numElems):
-    return NDSceneUpdateStartNodesVector(builder, numElems)
+    return NDPacketSceneUpdateStartNodesVector(builder, numElems)
 
-def NDSceneUpdateAddBuffers(builder, buffers):
+def NDPacketSceneUpdateAddBuffers(builder, buffers):
     builder.PrependUOffsetTRelativeSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(buffers), 0)
 
 def AddBuffers(builder, buffers):
-    NDSceneUpdateAddBuffers(builder, buffers)
+    NDPacketSceneUpdateAddBuffers(builder, buffers)
 
-def NDSceneUpdateStartBuffersVector(builder, numElems):
+def NDPacketSceneUpdateStartBuffersVector(builder, numElems):
     return builder.StartVector(4, numElems, 4)
 
 def StartBuffersVector(builder, numElems):
-    return NDSceneUpdateStartBuffersVector(builder, numElems)
+    return NDPacketSceneUpdateStartBuffersVector(builder, numElems)
 
-def NDSceneUpdateEnd(builder):
+def NDPacketSceneUpdateEnd(builder):
     return builder.EndObject()
 
 def End(builder):
-    return NDSceneUpdateEnd(builder)
+    return NDPacketSceneUpdateEnd(builder)
