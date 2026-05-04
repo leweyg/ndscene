@@ -248,6 +248,49 @@
         font-weight: 650;
       }
 
+      .ref-link,
+      .references-link,
+      .path-link {
+        height: auto;
+        border: 0;
+        border-radius: 4px;
+        padding: 0 3px;
+        background: transparent;
+        color: var(--accent);
+        font: inherit;
+        font-weight: 650;
+        text-decoration: underline;
+        text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+      }
+
+      .ref-link:hover,
+      .references-link:hover,
+      .path-link:hover {
+        background: var(--accent-soft);
+        color: #0b5f59;
+      }
+
+      .ref-link:disabled {
+        color: var(--muted);
+        cursor: not-allowed;
+        text-decoration: none;
+      }
+
+      .annotation {
+        color: var(--muted);
+      }
+
+      .references-link {
+        margin-left: 8px;
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .tree-node.highlight > .row {
+        background: var(--accent-soft);
+      }
+
       .truncated {
         color: var(--value);
       }

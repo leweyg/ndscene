@@ -15,6 +15,38 @@ const input = document.querySelector("#sourceInput");
 const statusEl = document.querySelector("#status");
 const treeEl = document.querySelector("#tree");
 
+let currentRoot = null;
+let currentReferenceIndex = new Map();
+
+const bufferViewTargets = new Map([
+  [34962, "ARRAY_BUFFER, vertex attributes"],
+  [34963, "ELEMENT_ARRAY_BUFFER, vertex indices"]
+]);
+
+const componentTypes = new Map([
+  [5120, "BYTE"],
+  [5121, "UNSIGNED_BYTE"],
+  [5122, "SHORT"],
+  [5123, "UNSIGNED_SHORT"],
+  [5125, "UNSIGNED_INT"],
+  [5126, "FLOAT"]
+]);
+
+const topLevelReferenceCollections = new Set([
+  "accessors",
+  "buffers",
+  "bufferViews",
+  "cameras",
+  "images",
+  "materials",
+  "meshes",
+  "nodes",
+  "samplers",
+  "scenes",
+  "skins",
+  "textures"
+]);
+
 const impliedIndexRules = [
   { parent: "gltf", key: "scene", type: "scenes" },
   { parent: "scenes", key: "nodes", type: "nodes" },
@@ -44,7 +76,6 @@ const impliedIndexRules = [
   { parent: "pbrMetallicRoughness", key: "metallicRoughnessTexture", type: "textures", nestedIndexKey: "index" },
   { parent: "KHR_materials_pbrSpecularGlossiness", key: "diffuseTexture", type: "textures", nestedIndexKey: "index" },
   { parent: "KHR_materials_pbrSpecularGlossiness", key: "specularGlossinessTexture", type: "textures", nestedIndexKey: "index" },
-  { parent: "KHR_texture_transform", key: "texCoord", type: "texCoords" },
   { parent: "textureInfo", key: "index", type: "textures" }
 ];
 
@@ -56,6 +87,24 @@ form.addEventListener("submit", event => {
 });
 
 treeEl.addEventListener("click", event => {
+  const referenceButton = event.target.closest(".ref-link");
+  if (referenceButton) {
+    goToReferenceButton(referenceButton);
+    return;
+  }
+
+  const referencesButton = event.target.closest(".references-link");
+  if (referencesButton) {
+    showReferencesForButton(referencesButton);
+    return;
+  }
+
+  const pathButton = event.target.closest(".path-link");
+  if (pathButton) {
+    goToPathButton(pathButton);
+    return;
+  }
+
   const button = event.target.closest(".toggle");
   if (!button) {
     return;
@@ -110,6 +159,8 @@ async function loadSource(source) {
   try {
     const details = await loadGltf(source);
     const root = makeRoot(details);
+    currentRoot = root;
+    currentReferenceIndex = buildReferenceIndex(root);
     renderTree(root);
     setStatus(statusFor(details));
   } catch (error) {
@@ -263,6 +314,7 @@ function renderNode(key, value, path) {
   const hasChildren = isExpandable(value);
   const node = document.createElement("div");
   node.className = "tree-node";
+  node.dataset.pathKey = pathKey(path);
 
   const row = document.createElement("div");
   row.className = "row";
@@ -283,6 +335,9 @@ function renderNode(key, value, path) {
   row.append(renderKey(key, path));
   row.append(renderSeparator());
   row.append(renderSummary(value, path));
+  if (isReferencablePath(path)) {
+    row.append(renderReferencesLink(path));
+  }
   node.append(row);
 
   if (hasChildren) {
@@ -316,10 +371,7 @@ function renderSeparator() {
 function renderSummary(value, path) {
   const implied = impliedIndexForPath(path, value);
   if (implied) {
-    const el = document.createElement("span");
-    el.className = "implied-index";
-    el.textContent = `@${implied.type}[${value}]`;
-    return el;
+    return renderReferenceLink(implied.type, value, path);
   }
 
   if (Array.isArray(value)) {
@@ -330,7 +382,7 @@ function renderSummary(value, path) {
     return renderObjectSummary(value);
   }
 
-  return renderScalar(value);
+  return renderScalar(value, path);
 }
 
 function renderArraySummary(array, path) {
@@ -341,6 +393,19 @@ function renderArraySummary(array, path) {
     el.className = "summary";
     el.textContent = "[]";
     return el;
+  }
+
+  if (impliedType) {
+    const fragment = document.createDocumentFragment();
+    fragment.append(renderPunctuation("["));
+    for (let index = 0; index < array.length; index += 1) {
+      if (index > 0) {
+        fragment.append(renderPunctuation(", "));
+      }
+      fragment.append(renderReferenceLink(impliedType, array[index], path.concat(String(index))));
+    }
+    fragment.append(renderPunctuation("]"));
+    return fragment;
   }
 
   if (isLargeNumericArray(array)) {
@@ -355,8 +420,8 @@ function renderArraySummary(array, path) {
     return el;
   }
 
-  el.className = impliedType ? "implied-index" : "summary";
-  el.textContent = `[${array.map(item => formatInlineValue(item, impliedType)).join(", ")}]`;
+  el.className = "summary";
+  el.textContent = `[${array.map(item => formatInlineValue(item)).join(", ")}]`;
   return el;
 }
 
@@ -379,12 +444,85 @@ function renderObjectSummary(object) {
   return el;
 }
 
-function renderScalar(value) {
+function renderScalar(value, path) {
+  const fragment = document.createDocumentFragment();
   const el = document.createElement("span");
   const type = value === null ? "null" : typeof value;
   el.className = type;
   el.textContent = formatInlineValue(value);
+  fragment.append(el);
+
+  const annotation = scalarAnnotation(path, value);
+  if (annotation) {
+    fragment.append(renderAnnotation(` (${annotation})`));
+  }
+
+  return fragment;
+}
+
+function renderPunctuation(text) {
+  const el = document.createElement("span");
+  el.className = "punct";
+  el.textContent = text;
   return el;
+}
+
+function renderAnnotation(text) {
+  const el = document.createElement("span");
+  el.className = "annotation";
+  el.textContent = text;
+  return el;
+}
+
+function renderReferenceLink(type, index, sourcePath) {
+  const targetPath = targetPathForReference(type, index, sourcePath);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ref-link implied-index";
+  button.textContent = `@${type}[${index}]`;
+  button.dataset.refType = type;
+  button.dataset.refIndex = String(index);
+  button.dataset.sourcePathKey = pathKey(sourcePath);
+
+  if (targetPath && pathExists(currentRoot, targetPath.slice(1))) {
+    button.dataset.targetPathKey = pathKey(targetPath);
+    button.title = `Go to ${formatPath(targetPath)}`;
+  } else {
+    button.disabled = true;
+    button.title = "Referenced object is not present in this file.";
+  }
+
+  return button;
+}
+
+function renderReferencesLink(path) {
+  const references = currentReferenceIndex.get(pathKey(path)) || [];
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "references-link";
+  button.textContent = `references (${references.length})`;
+  button.dataset.targetPathKey = pathKey(path);
+  button.title = "Show paths that reference this object";
+  return button;
+}
+
+function scalarAnnotation(path, value) {
+  if (!Number.isInteger(value)) {
+    return "";
+  }
+
+  const key = path[path.length - 1];
+  const ownerCollection = collectionForPropertyPath(path);
+
+  if (key === "target" && ownerCollection === "bufferViews") {
+    return bufferViewTargets.get(value) || "unknown usage";
+  }
+
+  if (key === "componentType") {
+    return componentTypes.get(value) || "UNKNOWN_COMPONENT_TYPE";
+  }
+
+  return "";
 }
 
 function childEntries(value) {
@@ -563,6 +701,280 @@ function collectionForNestedIndexPath(path) {
 
 function isArrayIndex(key) {
   return String(Number(key)) === String(key) && Number.isInteger(Number(key));
+}
+
+function buildReferenceIndex(root) {
+  const referenceIndex = new Map();
+
+  visitTree(root, ["root"], (value, path) => {
+    const implied = impliedIndexForPath(path, value);
+    if (!implied) {
+      return;
+    }
+
+    const targetPath = targetPathForReference(implied.type, value, path);
+    if (!targetPath || !pathExists(root, targetPath.slice(1))) {
+      return;
+    }
+
+    const key = pathKey(targetPath);
+    const references = referenceIndex.get(key) || [];
+    references.push({
+      path,
+      type: implied.type,
+      index: value
+    });
+    referenceIndex.set(key, references);
+  });
+
+  return referenceIndex;
+}
+
+function visitTree(value, path, visitor) {
+  visitor(value, path);
+
+  if (!value || typeof value !== "object") {
+    return;
+  }
+
+  for (const [key, childValue] of childEntries(value)) {
+    visitTree(childValue, path.concat(String(key)), visitor);
+  }
+}
+
+function targetPathForReference(type, index, sourcePath) {
+  if (!Number.isInteger(index)) {
+    return null;
+  }
+
+  if (type === "animation.samplers") {
+    const animationIndex = animationIndexForPath(sourcePath);
+    if (animationIndex === null) {
+      return null;
+    }
+    return ["root", "gltf", "animations", animationIndex, "samplers", String(index)];
+  }
+
+  if (!topLevelReferenceCollections.has(type)) {
+    return null;
+  }
+
+  return ["root", "gltf", type, String(index)];
+}
+
+function animationIndexForPath(path) {
+  const animationsIndex = path.indexOf("animations");
+  if (animationsIndex === -1 || animationsIndex + 1 >= path.length) {
+    return null;
+  }
+  return path[animationsIndex + 1];
+}
+
+function isReferencablePath(path) {
+  if (path.length === 4 && path[0] === "root" && path[1] === "gltf") {
+    return topLevelReferenceCollections.has(path[2]) && isArrayIndex(path[3]);
+  }
+
+  return (
+    path.length === 6 &&
+    path[0] === "root" &&
+    path[1] === "gltf" &&
+    path[2] === "animations" &&
+    isArrayIndex(path[3]) &&
+    path[4] === "samplers" &&
+    isArrayIndex(path[5])
+  );
+}
+
+function goToReferenceButton(button) {
+  const targetPathKey = button.dataset.targetPathKey;
+  if (!targetPathKey) {
+    return;
+  }
+  expandAndScrollToPathKey(targetPathKey);
+}
+
+function goToPathButton(button) {
+  const targetPathKey = button.dataset.targetPathKey;
+  if (!targetPathKey) {
+    return;
+  }
+  expandAndScrollToPathKey(targetPathKey);
+}
+
+function showReferencesForButton(button) {
+  const targetPath = parsePathKey(button.dataset.targetPathKey);
+  const targetNode = findNodeByPathKey(button.dataset.targetPathKey);
+  if (!targetNode || !targetPath) {
+    return;
+  }
+
+  const references = currentReferenceIndex.get(button.dataset.targetPathKey) || [];
+  let children = targetNode.querySelector(":scope > .children");
+  if (!children) {
+    children = document.createElement("div");
+    children.className = "children";
+    targetNode.append(children);
+  }
+
+  let referencesNode = targetNode.querySelector(":scope > .children > .tree-node.references-node");
+  if (!referencesNode) {
+    referencesNode = renderReferencesNode(targetPath, references);
+    referencesNode.classList.add("references-node");
+    children.prepend(referencesNode);
+  } else {
+    referencesNode.replaceWith(renderReferencesNode(targetPath, references));
+    referencesNode = targetNode.querySelector(":scope > .children > .tree-node.references-node");
+  }
+
+  targetNode.classList.remove("collapsed");
+  children.hidden = false;
+  const toggle = targetNode.querySelector(":scope > .row .toggle");
+  if (toggle) {
+    toggle.setAttribute("aria-expanded", "true");
+  }
+
+  referencesNode.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function renderReferencesNode(targetPath, references) {
+  const path = targetPath.concat("references");
+  const node = document.createElement("div");
+  node.className = "tree-node references-node";
+  node.dataset.pathKey = pathKey(path);
+
+  const row = document.createElement("div");
+  row.className = "row";
+
+  const spacer = document.createElement("span");
+  spacer.className = "leaf-space";
+  row.append(spacer);
+  row.append(renderKey("references", path));
+  row.append(renderSeparator());
+
+  const summary = document.createElement("span");
+  summary.className = "summary";
+  summary.textContent = references.length ? `[${references.length} paths]` : "[]";
+  row.append(summary);
+  node.append(row);
+
+  if (references.length) {
+    const children = document.createElement("div");
+    children.className = "children";
+
+    references.forEach((reference, index) => {
+      children.append(renderReferencePathNode(index, reference, path.concat(String(index))));
+    });
+
+    node.append(children);
+  }
+
+  return node;
+}
+
+function renderReferencePathNode(index, reference, path) {
+  const node = document.createElement("div");
+  node.className = "tree-node";
+  node.dataset.pathKey = pathKey(path);
+
+  const row = document.createElement("div");
+  row.className = "row";
+
+  const spacer = document.createElement("span");
+  spacer.className = "leaf-space";
+  row.append(spacer);
+  row.append(renderKey(index, path));
+  row.append(renderSeparator());
+
+  const link = document.createElement("button");
+  link.type = "button";
+  link.className = "path-link";
+  link.textContent = formatPath(reference.path);
+  link.dataset.targetPathKey = pathKey(reference.path);
+  link.title = "Go to this reference";
+  row.append(link);
+
+  node.append(row);
+  return node;
+}
+
+function expandAndScrollToPathKey(targetPathKey) {
+  const targetPath = parsePathKey(targetPathKey);
+  if (!targetPath) {
+    return;
+  }
+
+  let deepestNode = null;
+  for (let length = 1; length <= targetPath.length; length += 1) {
+    const node = findNodeByPathKey(pathKey(targetPath.slice(0, length)));
+    if (!node) {
+      continue;
+    }
+
+    deepestNode = node;
+    node.classList.remove("collapsed");
+    const children = node.querySelector(":scope > .children");
+    if (children) {
+      children.hidden = false;
+    }
+    const toggle = node.querySelector(":scope > .row .toggle");
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", "true");
+    }
+  }
+
+  const targetNode = findNodeByPathKey(targetPathKey) || deepestNode;
+  if (!targetNode) {
+    return;
+  }
+
+  targetNode.scrollIntoView({ block: "center", behavior: "smooth" });
+  targetNode.classList.add("highlight");
+  window.setTimeout(() => targetNode.classList.remove("highlight"), 1300);
+}
+
+function findNodeByPathKey(key) {
+  if (!key) {
+    return null;
+  }
+
+  return Array.from(treeEl.querySelectorAll(".tree-node"))
+    .find(node => node.dataset.pathKey === key) || null;
+}
+
+function pathExists(root, path) {
+  let value = root;
+  for (const key of path) {
+    if (value === null || value === undefined || !(key in Object(value))) {
+      return false;
+    }
+    value = value[key];
+  }
+  return true;
+}
+
+function pathKey(path) {
+  return JSON.stringify(path);
+}
+
+function parsePathKey(key) {
+  try {
+    return JSON.parse(key);
+  } catch {
+    return null;
+  }
+}
+
+function formatPath(path) {
+  return path.map((part, index) => {
+    if (index === 0) {
+      return part;
+    }
+    if (isArrayIndex(part)) {
+      return `[${part}]`;
+    }
+    return `.${part}`;
+  }).join("");
 }
 
 function formatBytes(bytes) {
