@@ -5,6 +5,7 @@ const TEXT_DECODER = new TextDecoder("utf-8");
 const MAX_INLINE_ARRAY_ITEMS = 24;
 const MAX_INLINE_OBJECT_KEYS = 12;
 const MAX_STRING_LENGTH = 180;
+const ACCESSOR_PREVIEW_ITEMS = 6;
 
 const GLB_MAGIC = 0x46546c67;
 const GLB_JSON_CHUNK = 0x4e4f534a;
@@ -17,6 +18,7 @@ const treeEl = document.querySelector("#tree");
 
 let currentRoot = null;
 let currentReferenceIndex = new Map();
+let currentAccessorPreviews = new Map();
 
 const bufferViewTargets = new Map([
   [34962, "ARRAY_BUFFER, vertex attributes"],
@@ -30,6 +32,25 @@ const componentTypes = new Map([
   [5123, "UNSIGNED_SHORT"],
   [5125, "UNSIGNED_INT"],
   [5126, "FLOAT"]
+]);
+
+const componentByteSizes = new Map([
+  [5120, 1],
+  [5121, 1],
+  [5122, 2],
+  [5123, 2],
+  [5125, 4],
+  [5126, 4]
+]);
+
+const accessorTypeComponents = new Map([
+  ["SCALAR", 1],
+  ["VEC2", 2],
+  ["VEC3", 3],
+  ["VEC4", 4],
+  ["MAT2", 4],
+  ["MAT3", 9],
+  ["MAT4", 16]
 ]);
 
 const topLevelReferenceCollections = new Set([
@@ -161,6 +182,7 @@ async function loadSource(source) {
     const root = makeRoot(details);
     currentRoot = root;
     currentReferenceIndex = buildReferenceIndex(root);
+    currentAccessorPreviews = buildAccessorPreviews(root, details.buffers || []);
     renderTree(root);
     setStatus(statusFor(details));
   } catch (error) {
@@ -180,11 +202,13 @@ async function loadGltf(source) {
   const lowerSource = source.toLowerCase();
 
   if (lowerSource.endsWith(".gltf") || contentType.includes("json")) {
+    const json = await response.json();
     return {
       source,
       format: "gltf",
-      json: await response.json(),
-      byteLength: Number(response.headers.get("content-length")) || null
+      json,
+      byteLength: Number(response.headers.get("content-length")) || null,
+      buffers: await loadExternalBuffers(source, json)
     };
   }
 
@@ -195,7 +219,8 @@ async function loadGltf(source) {
     format: "glb",
     json: parsed.json,
     byteLength: arrayBuffer.byteLength,
-    chunks: parsed.chunks
+    chunks: parsed.chunks,
+    buffers: parsed.binaryChunk ? [parsed.binaryChunk] : []
   };
 }
 
@@ -223,6 +248,7 @@ function parseGlb(arrayBuffer) {
   const chunks = [];
   let offset = 12;
   let json = null;
+  let binaryChunk = null;
 
   while (offset + 8 <= declaredLength) {
     const chunkLength = dataView.getUint32(offset, true);
@@ -243,6 +269,8 @@ function parseGlb(arrayBuffer) {
     if (chunkType === GLB_JSON_CHUNK) {
       const jsonText = TEXT_DECODER.decode(arrayBuffer.slice(chunkStart, chunkEnd)).trim();
       json = JSON.parse(jsonText);
+    } else if (chunkType === GLB_BIN_CHUNK && !binaryChunk) {
+      binaryChunk = arrayBuffer.slice(chunkStart, chunkEnd);
     }
 
     offset = chunkEnd;
@@ -252,7 +280,7 @@ function parseGlb(arrayBuffer) {
     throw new Error("GLB has no JSON chunk.");
   }
 
-  return { json, chunks };
+  return { json, chunks, binaryChunk };
 }
 
 function chunkTypeName(type) {
@@ -263,6 +291,49 @@ function chunkTypeName(type) {
     return "BIN";
   }
   return `0x${type.toString(16).padStart(8, "0")}`;
+}
+
+async function loadExternalBuffers(source, json) {
+  if (!Array.isArray(json.buffers)) {
+    return [];
+  }
+
+  return Promise.all(json.buffers.map(async buffer => {
+    if (!buffer || !buffer.uri) {
+      return null;
+    }
+
+    if (buffer.uri.startsWith("data:")) {
+      return dataUriToArrayBuffer(buffer.uri);
+    }
+
+    const bufferUrl = new URL(buffer.uri, new URL(source, window.location.href));
+    const response = await fetch(bufferUrl);
+    if (!response.ok) {
+      throw new Error(`${bufferUrl}: ${response.status} ${response.statusText}`);
+    }
+    return response.arrayBuffer();
+  }));
+}
+
+function dataUriToArrayBuffer(uri) {
+  const commaIndex = uri.indexOf(",");
+  if (commaIndex === -1) {
+    throw new Error("Invalid buffer data URI.");
+  }
+
+  const metadata = uri.slice(0, commaIndex);
+  const data = uri.slice(commaIndex + 1);
+  const binary = metadata.endsWith(";base64")
+    ? window.atob(data)
+    : decodeURIComponent(data);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes.buffer;
 }
 
 function makeRoot(details) {
@@ -346,6 +417,11 @@ function renderNode(key, value, path) {
 
     for (const [childKey, childValue] of childEntries(value)) {
       children.append(renderNode(childKey, childValue, path.concat(String(childKey))));
+    }
+
+    const preview = currentAccessorPreviews.get(pathKey(path));
+    if (preview) {
+      children.append(renderAccessorPreviewNode(preview, path.concat("preview")));
     }
 
     node.append(children);
@@ -504,6 +580,29 @@ function renderReferencesLink(path) {
   button.dataset.targetPathKey = pathKey(path);
   button.title = "Show paths that reference this object";
   return button;
+}
+
+function renderAccessorPreviewNode(preview, path) {
+  const node = document.createElement("div");
+  node.className = "tree-node";
+  node.dataset.pathKey = pathKey(path);
+
+  const row = document.createElement("div");
+  row.className = "row";
+
+  const spacer = document.createElement("span");
+  spacer.className = "leaf-space";
+  row.append(spacer);
+  row.append(renderKey("preview", path));
+  row.append(renderSeparator());
+
+  const value = document.createElement("span");
+  value.className = preview.truncated ? "truncated" : "summary";
+  value.textContent = formatAccessorPreview(preview);
+  row.append(value);
+
+  node.append(row);
+  return node;
 }
 
 function scalarAnnotation(path, value) {
@@ -728,6 +827,148 @@ function buildReferenceIndex(root) {
   });
 
   return referenceIndex;
+}
+
+function buildAccessorPreviews(root, buffers) {
+  const previews = new Map();
+  const gltf = root.gltf;
+
+  if (!gltf || !Array.isArray(gltf.accessors) || !Array.isArray(gltf.bufferViews)) {
+    return previews;
+  }
+
+  gltf.accessors.forEach((accessor, accessorIndex) => {
+    const preview = previewAccessor(accessor, gltf.bufferViews, buffers);
+    if (preview) {
+      previews.set(pathKey(["root", "gltf", "accessors", String(accessorIndex)]), preview);
+    }
+  });
+
+  return previews;
+}
+
+function previewAccessor(accessor, bufferViews, buffers) {
+  if (
+    !accessor ||
+    !Number.isInteger(accessor.bufferView) ||
+    !Number.isInteger(accessor.componentType) ||
+    typeof accessor.type !== "string" ||
+    !Number.isInteger(accessor.count)
+  ) {
+    return null;
+  }
+
+  const componentSize = componentByteSizes.get(accessor.componentType);
+  const componentCount = accessorTypeComponents.get(accessor.type);
+  const bufferView = bufferViews[accessor.bufferView];
+
+  if (!componentSize || !componentCount || !bufferView) {
+    return null;
+  }
+
+  const bufferIndex = Number.isInteger(bufferView.buffer) ? bufferView.buffer : 0;
+  const buffer = buffers[bufferIndex];
+  if (!buffer) {
+    return null;
+  }
+
+  const dataView = new DataView(buffer);
+  const itemByteLength = componentSize * componentCount;
+  const stride = bufferView.byteStride || itemByteLength;
+  const start = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+  const itemCount = Math.min(accessor.count, ACCESSOR_PREVIEW_ITEMS);
+  const items = [];
+
+  for (let itemIndex = 0; itemIndex < itemCount; itemIndex += 1) {
+    const itemOffset = start + itemIndex * stride;
+    if (itemOffset + itemByteLength > dataView.byteLength) {
+      break;
+    }
+
+    const item = [];
+    for (let componentIndex = 0; componentIndex < componentCount; componentIndex += 1) {
+      const componentOffset = itemOffset + componentIndex * componentSize;
+      item.push(readAccessorComponent(dataView, componentOffset, accessor));
+    }
+    items.push(componentCount === 1 ? item[0] : item);
+  }
+
+  if (!items.length) {
+    return null;
+  }
+
+  return {
+    items,
+    count: accessor.count,
+    type: accessor.type,
+    componentType: componentTypes.get(accessor.componentType) || String(accessor.componentType),
+    truncated: accessor.count > items.length,
+    sparse: Boolean(accessor.sparse)
+  };
+}
+
+function readAccessorComponent(dataView, offset, accessor) {
+  let value;
+
+  switch (accessor.componentType) {
+    case 5120:
+      value = dataView.getInt8(offset);
+      return accessor.normalized ? Math.max(value / 127, -1) : value;
+    case 5121:
+      value = dataView.getUint8(offset);
+      return accessor.normalized ? value / 255 : value;
+    case 5122:
+      value = dataView.getInt16(offset, true);
+      return accessor.normalized ? Math.max(value / 32767, -1) : value;
+    case 5123:
+      value = dataView.getUint16(offset, true);
+      return accessor.normalized ? value / 65535 : value;
+    case 5125:
+      value = dataView.getUint32(offset, true);
+      return accessor.normalized ? value / 4294967295 : value;
+    case 5126:
+      return dataView.getFloat32(offset, true);
+    default:
+      return null;
+  }
+}
+
+function formatAccessorPreview(preview) {
+  const values = preview.items.map(formatAccessorPreviewItem).join(", ");
+  const suffixes = [];
+
+  if (preview.truncated) {
+    suffixes.push(`of ${preview.count}`);
+  }
+  suffixes.push(`${preview.type} ${preview.componentType}`);
+  if (preview.sparse) {
+    suffixes.push("sparse overrides not applied");
+  }
+
+  return `[${values}, ...] (${suffixes.join("; ")})`;
+}
+
+function formatAccessorPreviewItem(item) {
+  if (Array.isArray(item)) {
+    return `[${item.map(formatAccessorPreviewNumber).join(", ")}]`;
+  }
+  return formatAccessorPreviewNumber(item);
+}
+
+function formatAccessorPreviewNumber(value) {
+  if (!Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (Object.is(value, -0)) {
+    return "0";
+  }
+
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+
+  return String(Number(value.toFixed(6)));
 }
 
 function visitTree(value, path, visitor) {
