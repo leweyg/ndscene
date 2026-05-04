@@ -566,6 +566,24 @@
         }
       }
 
+      function flipGeometryUvX(geometry) {
+        const faceUvs = geometry.faceVertexUvs;
+
+        for (let ia = 0; ia < faceUvs.length; ia += 1) {
+          const ga = faceUvs[ia];
+          for (let ib = 0; ib < ga.length; ib += 1) {
+            const gb = ga[ib];
+            for (let ic = 0; ic < gb.length; ic += 1) {
+              const uv = gb[ic];
+              // uv.x = 1.0 - uv.x;
+              // uv.y = 1.0 - uv.y;
+            }
+          }
+        }
+        geometry.needsUpdate = true;
+        return geometry;
+      }
+
       function loadTextureFromSceneBuffer(buffer) {
         return new Promise((resolve, reject) => {
           const blobUrl = buffer.dataEncoded && buffer.dataEncoded.length > 0
@@ -642,8 +660,9 @@
         frame.position.z = -depth - 0.015;
         planeGroup.add(frame);
 
+        const plateGeometry = flipGeometryUvX(new THREE.PlaneGeometry(planeWidth, planeHeight));
         const plate = new THREE.Mesh(
-          new THREE.PlaneGeometry(planeWidth, planeHeight),
+          plateGeometry,
           new THREE.MeshBasicMaterial({
             map: texture,
             transparent: true,

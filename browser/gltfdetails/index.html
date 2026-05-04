@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GLTF Details Viewer</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --ink: #1f2933;
+        --muted: #667085;
+        --line: #d7dde5;
+        --line-soft: #e8ecf1;
+        --accent: #0f766e;
+        --accent-soft: #d7f4ef;
+        --value: #744210;
+        --string: #166534;
+        --number: #1d4ed8;
+        --bool: #9333ea;
+        --error: #b42318;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .shell {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      header {
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(12px);
+      }
+
+      .toolbar {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 16px 0;
+        display: grid;
+        grid-template-columns: auto minmax(180px, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0;
+        white-space: nowrap;
+      }
+
+      form {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+      }
+
+      input {
+        width: 100%;
+        min-width: 0;
+        height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        padding: 0 12px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+      }
+
+      input:focus {
+        border-color: var(--accent);
+        outline: 3px solid var(--accent-soft);
+      }
+
+      button {
+        height: 38px;
+        border: 1px solid #0b5f59;
+        border-radius: 6px;
+        padding: 0 14px;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        font-weight: 650;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #0d6861;
+      }
+
+      .status {
+        justify-self: end;
+        color: var(--muted);
+        font-size: 13px;
+        white-space: nowrap;
+      }
+
+      main {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+        padding: 18px 0 32px;
+      }
+
+      .tree-wrap {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        overflow: auto;
+        min-height: calc(100vh - 108px);
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+      }
+
+      .tree {
+        min-width: max-content;
+        padding: 14px 12px 18px;
+        font-family:
+          "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 13px;
+      }
+
+      .tree-empty,
+      .tree-error {
+        padding: 24px;
+        color: var(--muted);
+      }
+
+      .tree-error {
+        color: var(--error);
+      }
+
+      .tree-node {
+        position: relative;
+      }
+
+      .children {
+        margin-left: 18px;
+        border-left: 1px solid var(--line-soft);
+        padding-left: 12px;
+      }
+
+      .row {
+        min-height: 24px;
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        border-radius: 5px;
+        padding: 2px 6px 2px 0;
+      }
+
+      .row:hover {
+        background: #f2f5f8;
+      }
+
+      .toggle {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 18px;
+        display: inline-grid;
+        place-items: center;
+        border: 0;
+        border-radius: 4px;
+        padding: 0;
+        background: transparent;
+        color: var(--muted);
+        font-family: inherit;
+        line-height: 1;
+      }
+
+      .toggle:hover {
+        background: var(--line-soft);
+        color: var(--ink);
+      }
+
+      .toggle::before {
+        content: "";
+        width: 0;
+        height: 0;
+        border-top: 4px solid transparent;
+        border-bottom: 4px solid transparent;
+        border-left: 6px solid currentColor;
+        transform: rotate(90deg);
+        transition: transform 120ms ease;
+      }
+
+      .collapsed > .row .toggle::before {
+        transform: rotate(0deg);
+      }
+
+      .leaf-space {
+        width: 18px;
+        flex: 0 0 18px;
+      }
+
+      .key {
+        color: #243b53;
+        font-weight: 650;
+      }
+
+      .index-key {
+        color: var(--accent);
+      }
+
+      .meta,
+      .punct,
+      .summary {
+        color: var(--muted);
+      }
+
+      .string {
+        color: var(--string);
+      }
+
+      .number {
+        color: var(--number);
+      }
+
+      .boolean {
+        color: var(--bool);
+      }
+
+      .null,
+      .undefined {
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      .implied-index {
+        color: var(--accent);
+        font-weight: 650;
+      }
+
+      .truncated {
+        color: var(--value);
+      }
+
+      .children[hidden] {
+        display: none;
+      }
+
+      @media (max-width: 720px) {
+        .toolbar {
+          width: min(100vw - 20px, 1180px);
+          grid-template-columns: 1fr;
+          align-items: stretch;
+          gap: 10px;
+        }
+
+        h1,
+        .status {
+          justify-self: start;
+        }
+
+        main {
+          width: min(100vw - 20px, 1180px);
+          padding-top: 10px;
+        }
+
+        .tree-wrap {
+          min-height: calc(100vh - 176px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="toolbar">
+          <h1>GLTF Details</h1>
+          <form id="sourceForm">
+            <input
+              id="sourceInput"
+              name="source"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="GLTF source URL"
+              value="door.gltf.glb">
+            <button type="submit">Load</button>
+          </form>
+          <div id="status" class="status">Ready</div>
+        </div>
+      </header>
+      <main>
+        <div class="tree-wrap" id="treeWrap">
+          <div id="tree" class="tree" role="tree"></div>
+        </div>
+      </main>
+    </div>
+    <script src="view.js"></script>
+  </body>
+</html>
